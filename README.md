@@ -39,6 +39,59 @@ so the next Start replays the story exactly as a brand-new player would see it.
 Scenes, captions and sound cues are defined in the `INTRO_SCENES` config in
 `game.js`.
 
+## Playing on an iPad
+
+CatQuest is built to be played on a tablet, not merely to survive on one:
+
+- **Landscape 16:9**, filling the screen. Held upright it asks for a turn
+  rather than serving a squashed strip.
+- **Touch pads** bottom-left and bottom-right, big enough for small thumbs.
+  They are multi-touch: hold *right* and tap *jump* at the same time, which is
+  most of the game.
+- **Safe-area insets**, so nothing sits under the home indicator or the
+  rounded screen corners.
+- **Retina rendering** — the canvas buffer matches the device pixel ratio (up
+  to 2.5x) while all game code keeps drawing in plain 960x540 coordinates.
+- **No bounce, no zoom, no text selection.** A thumb sliding off a control
+  mid-jump cannot scroll or select the page.
+
+### Add it to her Home Screen
+
+This is the step worth doing. In Safari: **Share → Add to Home Screen**.
+CatQuest then launches **full screen with no Safari chrome** and its own Dex
+icon — it behaves like an app rather than a web page. That needs HTTPS, which
+GitHub Pages provides.
+
+## Publishing it (GitHub Pages)
+
+The folder is a self-contained static site — no build step, no dependencies.
+It is already a git repository with one commit and **no remote**; it is
+entirely standalone and shares nothing with any other project.
+
+Create an empty repo on GitHub called  (no README, no .gitignore),
+then:
+
+```bash
+git -C "C:/Projects/NumberQuest" remote add origin https://github.com/YOURNAME/catquest.git
+git -C "C:/Projects/NumberQuest" branch -M main
+git -C "C:/Projects/NumberQuest" push -u origin main
+```
+
+Then on GitHub: **Settings → Pages → Source: Deploy from a branch →
+ / **. A minute later it is live at
+.
+
+To publish later changes:
+
+```bash
+git -C "C:/Projects/NumberQuest" add -A && git -C "C:/Projects/NumberQuest" commit -m "what changed" && git -C "C:/Projects/NumberQuest" push
+```
+
+Every path in the page is relative, so it works from a subfolder URL. 
+is loaded with a  cache-buster, so a republished game is never served
+stale — at the cost of re-downloading it each visit, which is the right trade
+for a small file on home wifi.
+
 ## Running it
 
 No build, no dependencies. Two options:
