@@ -1,0 +1,14 @@
+{
+  "name": "CatQuest — Dex the Cat and the Star Portal",
+  "short_name": "CatQuest",
+  "description": "A maths platformer for young explorers. Cure the Glitch Rats, fly the crystal canyon and rescue Nova.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b2a4a",
+  "theme_color": "#1b2a4a",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

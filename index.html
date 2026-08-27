@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover lets the page use the whole iPad screen; the safe-area
+     insets below then keep the controls clear of the home indicator. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- Added to the Home Screen, CatQuest opens full screen with no Safari
+     chrome — which on an iPad is the difference between a web page and a game. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CatQuest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1b2a4a">
+<!-- The markup and game.js must always be the same generation. game.js carries
+     a ?v= cache-buster; without this, a plain reload could serve a cached page
+     to a fresh script, which then wires listeners to elements that do not
+     exist yet. -->
+<meta http-equiv="Cache-Control" content="no-store">
+<title>CatQuest — Dex the Cat</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: linear-gradient(160deg, #1b2a4a 0%, #2e1f47 100%);
+    overflow: hidden;
+    font-family: "Segoe UI", "Trebuchet MS", Verdana, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    /* iPad: no rubber-band bounce, no pull-to-refresh, no text selection when
+       a small thumb slides off a control mid-jump, no long-press callout. */
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* position:fixed pins the page so Safari cannot scroll it at all — on iOS
+     'overflow:hidden' alone still lets the whole document bounce. */
+  body {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none;
+  }
+
+  #wrap {
+    position: relative;
+    /* dvh tracks Safari's shrinking toolbar; the vh line is the fallback for
+       browsers without it, and must come first. */
+    width: min(100vw, calc(100vh * 16 / 9));
+    width: min(100dvw, calc(100dvh * 16 / 9));
+    aspect-ratio: 16 / 9;
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+  #game {
+    display: block; width: 100%; height: 100%;
+    border-radius: 10px;
+    box-shadow: 0 10px 50px rgba(0,0,0,.55);
+  }
+
+  .hidden { display: none !important; }
+
+  /* CatQuest is a 16:9 landscape game. Held upright, an iPad gives it a strip
+     of screen and buries the touch pads, so ask for a turn rather than serve
+     something unplayable. Only on touch devices — a narrow desktop window is
+     the player's own business. */
+  #rotate {
+    position: fixed; inset: 0; z-index: 90;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px;
+    background: linear-gradient(160deg, #1b2a4a 0%, #2e1f47 100%);
+    color: #fff; text-align: center; padding: 24px;
+  }
+  #rotate .rotIcon { font-size: 76px; animation: rotSpin 2.4s ease-in-out infinite; }
+  @keyframes rotSpin {
+    0%, 40% { transform: rotate(0deg); }
+    60%, 100% { transform: rotate(-90deg); }
+  }
+  #rotate h2 { margin: 0; font-size: 26px; color: #ffce54; }
+  #rotate p { margin: 0; font-size: 17px; opacity: .85; }
+  @media (orientation: portrait) {
+    body.touch #rotate { display: flex; }
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: calc(10px + env(safe-area-inset-top, 0px))
+             calc(14px + env(safe-area-inset-right, 0px))
+             10px
+             calc(14px + env(safe-area-inset-left, 0px));
+    z-index: 10; pointer-events: none;
+  }
+  .chip {
+    background: rgba(10, 20, 45, .55); color: #fff;
+    border-radius: 999px; padding: 5px 14px;
+    font-weight: 800; font-size: clamp(9px, calc(2 * var(--gvmin)), 18px);
+    margin-right: 8px; display: inline-block;
+  }
+  #hudLeft { display: flex; }
+  #livesChip.lowLives { color: #ffc4cf; }
+  @keyframes lifePop { 0% { transform: scale(1); } 45% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  #livesChip.lifePop { animation: lifePop .45s ease; }
+  #gameOverLives { font-size: clamp(20px, calc(6 * var(--gvmin)), 46px); margin: 6px 0 2px; }
+  #hudRight { display: flex; gap: 8px; pointer-events: auto; }
+  .iconbtn {
+    width: 46px; height: 46px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.55);
+    background: rgba(10, 20, 45, .55); color: #fff;
+    font-size: 20px; cursor: pointer; touch-action: manipulation;
+  }
+  .iconbtn:active { transform: scale(.93); }
+
+  #progress {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    width: 42%; height: 16px; border-radius: 999px;
+    background: rgba(255,255,255,.22);
+    border: 2px solid rgba(255,255,255,.35);
+  }
+  #progressFill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg, #ffd24d, #ff9b3d);
+    border-radius: 999px; transition: width .25s;
+  }
+  #progressCat {
+    position: absolute; top: -12px; left: 0%; transform: translateX(-50%);
+    font-size: 22px; transition: left .25s; text-shadow: 0 2px 3px rgba(0,0,0,.4);
+  }
+  #progressEnd { position: absolute; right: -8px; top: -13px; font-size: 20px; }
+  .tick { position: absolute; top: 2px; bottom: 2px; width: 3px; background: rgba(255,255,255,.55); border-radius: 2px; }
+
+  /* ---------- Touch controls ---------- */
+  #touch {
+    position: absolute; left: 0; right: 0;
+    /* clear of the iPad's home indicator, and of the rounded screen corners */
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: none; justify-content: space-between; align-items: flex-end;
+    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+    padding-right: calc(20px + env(safe-area-inset-right, 0px));
+    z-index: 15; pointer-events: none;
+  }
+  body.touch #touch { display: flex; }
+  #touch button {
+    pointer-events: auto; border: 3px solid rgba(255,255,255,.65);
+    background: rgba(255,255,255,.30); color: #fff;
+    border-radius: 50%; font-weight: 900;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #touch button:active { background: rgba(255,255,255,.55); }
+  #btnLeft, #btnRight {
+    width: clamp(88px, calc(13 * var(--gvmin)), 128px);
+    height: clamp(88px, calc(13 * var(--gvmin)), 128px);
+    font-size: clamp(34px, calc(5 * var(--gvmin)), 46px);
+    margin-right: 14px;
+  }
+  #btnJump {
+    width: clamp(116px, calc(17 * var(--gvmin)), 168px);
+    height: clamp(116px, calc(17 * var(--gvmin)), 168px);
+    font-size: clamp(22px, calc(3.2 * var(--gvmin)), 30px);
+  }
+  #touchRightGroup { display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; }
+  #btnPower {
+    width: clamp(76px, calc(11 * var(--gvmin)), 110px);
+    height: clamp(76px, calc(11 * var(--gvmin)), 110px);
+    font-size: clamp(30px, calc(4.4 * var(--gvmin)), 42px);
+  }
+  #btnPower.drained { opacity: .35; }
+
+  /* ---------- Overlays ---------- */
+  .overlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(15, 22, 55, .78); text-align: center;
+    border-radius: 10px;
+    animation: ovIn .28s ease;
+  }
+  @keyframes ovIn { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: #fff8ec; color: #2a3550;
+    border: 4px solid #ffce54; border-radius: 26px;
+    box-shadow: 0 14px 44px rgba(0,0,0,.5);
+    padding: clamp(9px, calc(2.6 * var(--gvmin)), 30px) clamp(11px, calc(3.6 * var(--gvmin)), 40px);
+    width: min(94%, 680px); max-height: 88%; overflow-y: auto;
+    scrollbar-width: none;               /* content is sized to fit; no visible bar */
+  }
+  .panel::-webkit-scrollbar { display: none; }
+  .panel h1 { margin: 0 0 4px; font-size: clamp(16px, calc(5.5 * var(--gvmin)), 44px); color: #e2571f; }
+  .panel h2 { margin: 0 0 8px; font-size: clamp(12px, calc(4 * var(--gvmin)), 30px); color: #e2571f; }
+  .panel h3 { margin: 12px 0 4px; font-size: clamp(10px, calc(3 * var(--gvmin)), 22px); color: #4b6ba8; }
+  .panel p { font-size: clamp(9px, calc(2.3 * var(--gvmin)), 17px); line-height: 1.45; margin: 7px 0; }
+  .subtitle { font-weight: 800; color: #4b6ba8; }
+  .small { font-size: clamp(9px, calc(2 * var(--gvmin)), 14px) !important; color: #8a97b5; }
+
+  .bigbtn {
+    display: inline-block; margin-top: 10px;
+    background: #42b25c; color: #fff; border: 0; cursor: pointer;
+    font-size: clamp(10px, calc(3.2 * var(--gvmin)), 24px); font-weight: 900;
+    padding: calc(2.6 * var(--gvmin)) calc(8 * var(--gvmin)); border-radius: 999px;
+    box-shadow: 0 5px 0 #2c7a3e; touch-action: manipulation;
+  }
+  .bigbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2c7a3e; }
+  .bigbtn.blue { background: #3f7fd6; box-shadow: 0 5px 0 #2b5a9a; }
+  .bigbtn.blue:active { box-shadow: 0 2px 0 #2b5a9a; }
+  .smallbtn {
+    background: #eaf0fb; color: #2a3550; border: 2px solid #b9c8e8;
+    border-radius: 999px; padding: 6px 16px; font-weight: 800;
+    font-size: 13px; cursor: pointer; touch-action: manipulation;
+  }
+  .smallbtn.danger { background: #fde8e8; border-color: #e8a5a5; color: #a33; }
+
+  .controlsRow {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px;
+    margin: 8px 0; font-size: clamp(9px, calc(2.1 * var(--gvmin)), 15px); font-weight: 700;
+  }
+  .kbd {
+    background: #edf2fb; border: 2px solid #b9c8e8; border-bottom-width: 4px;
+    border-radius: 8px; padding: 2px 9px; font-family: inherit; font-weight: 800;
+  }
+
+  #overlayTitle .panel h1 { margin-bottom: 0; }
+  #overlayTitle .panel p { margin: 5px 0; }
+  #overlayTitle .controlsRow { margin: 6px 0; }
+
+  /* ---------- TEMPORARY test jump-to-level bar (delete with #testJump) ---------- */
+  #testJump {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    z-index: 40;                       /* above the overlays, never clipped */
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: center; gap: 6px;
+    background: rgba(52, 34, 16, .92); border: 2px dashed #e8b93c;
+    border-radius: 999px; padding: 6px 14px;
+  }
+  #testJump .tjLabel {
+    font-size: 12px; font-weight: 800; color: #ffd88a; letter-spacing: .3px;
+  }
+  #testJump button {
+    font-family: inherit; font-weight: 800; font-size: 12px;
+    background: #fff3d6; color: #7a5b00;
+    border: 2px dashed #e8b93c; border-radius: 999px;
+    padding: 5px 12px; cursor: pointer; touch-action: manipulation;
+  }
+  #testJump button:hover { background: #ffe9ae; }
+  #testJump button:active { transform: scale(.95); }
+
+  /* ---------- Level picker ---------- */
+  #levelList { display: flex; flex-direction: column; gap: calc(1 * var(--gvmin)); margin: calc(1.4 * var(--gvmin)) 0; }
+  .lvlCard {
+    display: flex; align-items: center; gap: calc(2 * var(--gvmin)); text-align: left;
+    background: #eef4ff; border: 3px solid #b9c8e8; border-radius: 16px;
+    padding: calc(0.8 * var(--gvmin)) calc(2.4 * var(--gvmin)); cursor: pointer; width: 100%;
+    font-family: inherit; color: #2a3550;
+    touch-action: manipulation;          /* no double-tap zoom / 300ms delay */
+  }
+  .lvlCard:hover:not(:disabled) { background: #dfeaff; }
+  .lvlCard:focus-visible { outline: 3px solid #42b25c; outline-offset: 2px; }
+  /* Pressed feedback must NOT move the row. A transform here shrinks the
+     button out from under a pointer held near its edge, pointerup lands on
+     the panel instead, and no click event is ever produced. */
+  .lvlCard:active:not(:disabled) {
+    background: #cfe0ff; box-shadow: inset 0 3px 8px rgba(40,60,110,.22);
+  }
+  .lvlCard > * { pointer-events: none; }  /* the whole row is one target */
+  .lvlCard .lvlIcon { font-size: clamp(14px, calc(4 * var(--gvmin)), 28px); flex: 0 0 auto; }
+  .lvlCard .lvlText { flex: 1 1 auto; min-width: 0; }
+  .lvlCard .lvlName { display: block; font-weight: 900; font-size: clamp(9px, calc(2.6 * var(--gvmin)), 18px); }
+  .lvlCard .lvlSub { display: block; font-size: clamp(9px, calc(2 * var(--gvmin)), 13px); color: #6b7a95; margin-top: 2px; }
+  .lvlCard .lvlBadge { flex: 0 0 auto; font-weight: 900; font-size: 13px; color: #2c7a3e; }
+  .lvlCard.lvlLocked, .lvlCard:disabled {
+    background: #e8e5dd; border-color: #cfc9bd; color: #8a8577; cursor: default;
+  }
+  .lvlCard.lvlLocked .lvlIcon { filter: grayscale(1); opacity: .5; }
+  .lvlCard.lvlLocked .lvlSub { color: #9a9486; }
+  .lvlCard.lvlNext { border-color: #42b25c; background: #eefaef; }
+
+  #overlayLevels .panel { padding-top: calc(2 * var(--gvmin)); padding-bottom: calc(2 * var(--gvmin)); }
+  #overlayLevels .panel h2 { margin-bottom: calc(0.6 * var(--gvmin)); }
+  #overlayLevels .bigbtn { margin-top: calc(0.8 * var(--gvmin)); }
+
+  /* ---------- Settings panel (kept out of the treehouse room itself) ---------- */
+  .setting {
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    gap: 10px; font-weight: 800; font-size: clamp(9px, calc(2.8 * var(--gvmin)), 19px);
+    background: #eef4ff; border: 2px solid #b9c8e8; border-radius: 14px;
+    padding: calc(2.4 * var(--gvmin)) calc(3.6 * var(--gvmin)); margin: calc(1.5 * var(--gvmin)) auto; max-width: 340px;
+  }
+  .setting input { transform: scale(1.5); margin-right: 4px; }
+  #resetRow { margin-top: 16px; padding-top: 12px; border-top: 2px dashed #d9b56a; }
+  #resetConfirm { color: #a33; font-weight: 800; font-size: 14px; display: block; }
+  #resetConfirm button { margin: 6px 4px 0; }
+  @keyframes cardPulse {
+    0%,100% { transform: scale(1); box-shadow: none; }
+    50% { transform: scale(1.07); box-shadow: 0 0 24px rgba(255, 206, 84, .9); }
+  }
+
+  /* ---------- Maths overlay ---------- */
+  #mathQuestion {
+    font-size: clamp(13px, calc(4.6 * var(--gvmin)), 34px); font-weight: 900;
+    color: #1d3557; margin: 12px 0 4px; line-height: 1.35;
+  }
+  #answers {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0 8px;
+  }
+  .answer {
+    font-size: clamp(14px, calc(4.6 * var(--gvmin)), 34px); font-weight: 900;
+    min-height: 74px; padding: 12px; cursor: pointer;
+    border-radius: 18px; border: 3px solid #7fb2e5;
+    background: #eaf4ff; color: #1d3557; touch-action: manipulation;
+  }
+  .answer:not(.faded):not(.correct):hover { background: #d9ecff; }
+  .answer:active { transform: scale(.97); }
+  .answer .keyhint { display: block; font-size: 12px; font-weight: 700; color: #7d95c4; }
+  .answer.correct { background: #c8f7c5; border-color: #42b25c; }
+  .answer.faded { opacity: .38; }
+  .answer.shake { animation: shake .35s; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-7px); } 75% { transform: translateX(7px); }
+  }
+  #mathFeedback { min-height: 1.4em; font-weight: 900; font-size: clamp(10px, calc(3 * var(--gvmin)), 22px); color: #e2571f; margin: 4px 0; }
+  #mathReward {
+    background: #e8f9e2; border: 3px solid #42b25c; border-radius: 14px;
+    padding: 8px 14px; font-weight: 900; color: #2c7a3e;
+    font-size: clamp(9px, calc(2.6 * var(--gvmin)), 19px);
+    animation: cardPulse .7s ease 2;
+  }
+  #mathHint {
+    background: #fff1c9; border: 2px dashed #e8b93c; border-radius: 14px;
+    padding: 10px 14px; font-weight: 700; color: #7a5b00;
+  }
+  .mathkeys { color: #8a97b5; font-size: 12px !important; }
+
+  /* ---------- Victory ---------- */
+  #overlayVictory .panel { padding-top: clamp(9px, calc(2 * var(--gvmin)), 20px); padding-bottom: clamp(9px, calc(2 * var(--gvmin)), 20px); }
+  #overlayVictory .panel h2 { margin-bottom: 2px; }
+  #overlayVictory .panel p { margin: 4px 0; }
+  #overlayVictory .bigbtn { margin-top: 6px; padding: 11px 30px; }
+  #victoryStats {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 10px;
+    margin: 8px auto; max-width: 560px; text-align: left;
+  }
+  @media (max-width: 640px) { #victoryStats { grid-template-columns: 1fr 1fr; } }
+  #victoryStats div {
+    background: #fdeecd; border-radius: 12px; padding: 6px 10px;
+    font-weight: 800; font-size: clamp(9px, calc(2.3 * var(--gvmin)), 16px);
+  }
+  #victoryStats span { display: block; font-size: 11px; color: #9a7b32; font-weight: 700; }
+  #unlockBanner {
+    background: #e8f9e2; border: 3px solid #42b25c; border-radius: 14px;
+    padding: 8px 12px; color: #2c7a3e; margin: 6px 0;
+    animation: cardPulse .8s ease 3;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  #unlockBanner .ubTop {
+    font-weight: 900; font-size: clamp(9px, calc(2.7 * var(--gvmin)), 19px);
+  }
+  #unlockBanner .ubIcons {
+    font-size: clamp(16px, calc(5 * var(--gvmin)), 34px); letter-spacing: 8px; line-height: 1.1;
+  }
+  #unlockBanner .ubTop { line-height: 1.25; }
+  #unlockBanner .ubHow {
+    font-weight: 800; font-size: clamp(9px, calc(2.2 * var(--gvmin)), 15px); color: #4a7a55;
+  }
+
+  /* ---------- Intro cinematic ---------- */
+  #introUI { position: absolute; inset: 0; z-index: 18; pointer-events: none; }
+  #skipBtn {
+    position: absolute; top: 14px; right: 14px; pointer-events: auto;
+    background: rgba(10, 20, 45, .75); color: #fff;
+    border: 2px solid rgba(255,255,255,.65); border-radius: 999px;
+    padding: 12px 26px; font-weight: 900;
+    font-size: clamp(9px, calc(2.6 * var(--gvmin)), 18px); cursor: pointer;
+    touch-action: manipulation;
+  }
+  #skipBtn:active { transform: scale(.94); }
+  #introHint {
+    position: absolute; bottom: 12px; right: 16px;
+    color: rgba(255,255,255,.75); font-weight: 800;
+    font-size: clamp(9px, calc(2 * var(--gvmin)), 13px);
+    text-shadow: 0 1px 3px rgba(0,0,0,.7); pointer-events: none;
+  }
+  body.in-intro #hud, body.in-intro #progress, body.in-intro #touch { display: none !important; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+    background: #ffce54; color: #5a3d00; z-index: 30;
+    padding: 10px 24px; border-radius: 999px;
+    font-weight: 900; font-size: clamp(9px, calc(2.4 * var(--gvmin)), 18px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ---------- Debug ---------- */
+  #debugPanel {
+    position: absolute; left: 10px; bottom: 10px; z-index: 40;
+    background: rgba(0,0,0,.75); color: #8ef5d2;
+    font: 12px/1.5 Consolas, monospace; white-space: pre;
+    padding: 10px 12px; border-radius: 10px; pointer-events: auto;
+  }
+  #debugPanel button {
+    margin: 4px 4px 0 0; font: 11px Consolas, monospace;
+    background: #234; color: #8ef5d2; border: 1px solid #8ef5d2;
+    border-radius: 6px; padding: 3px 8px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="540"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hudLeft">
+      <span class="chip" id="livesChip" aria-label="Spare lives">🐱 × 9</span>
+      <span class="chip" id="healthChip">❤️</span>
+      <span class="chip" id="crystalChip">⭐ 0</span>
+      <span class="chip" id="zapChip">⚡ 0</span>
+      <span class="chip" id="powerChip">🫧 ●</span>
+    </div>
+    <div id="hudRight">
+      <button id="settingsBtn" class="iconbtn hidden" aria-label="Open settings">⚙</button>
+      <button id="muteBtn" class="iconbtn" aria-label="Mute or unmute sound">🔊</button>
+      <button id="pauseBtn" class="iconbtn" aria-label="Pause game">⏸</button>
+    </div>
+  </div>
+  <div id="progress" aria-hidden="true">
+    <div id="progressFill"></div>
+    <!-- checkpoint ticks are generated from the level data at startup -->
+    <div id="progressCat">🐱</div>
+    <div id="progressEnd">🌀</div>
+  </div>
+
+  <!-- Touch controls -->
+  <div id="rotate">
+    <div class="rotIcon">📱</div>
+    <h2>Turn your iPad sideways</h2>
+    <p>CatQuest is a widescreen adventure — Dex needs the long way round!</p>
+  </div>
+
+  <div id="touch">
+    <div>
+      <button id="btnLeft" aria-label="Move left">◀</button><button id="btnRight" aria-label="Move right">▶</button>
+    </div>
+    <div id="touchRightGroup">
+      <button id="btnPower" aria-label="Use power-up">🫧</button>
+      <button id="btnJump" aria-label="Jump">JUMP</button>
+    </div>
+  </div>
+
+  <!-- Title screen -->
+  <div id="overlayTitle" class="overlay">
+    <div class="panel">
+      <h1>🐱 CatQuest</h1>
+      <p class="subtitle">Dex the Cat and the Star Portal</p>
+      <p>Vain <b>King Ratthew the Third</b> grew <b>50× bigger</b>, turned the
+         animals into sparking <b>Glitch Rats</b> and kidnapped <b>Nova</b>. Cure
+         the creatures, win her power-ups, reach the Star Portal!</p>
+      <div class="controlsRow">
+        <span><span class="kbd">◀</span> <span class="kbd">▶</span> or <span class="kbd">A</span> <span class="kbd">D</span> — run</span>
+        <span><span class="kbd">SPACE</span> / <span class="kbd">W</span> / <span class="kbd">▲</span> — jump</span>
+        <span><span class="kbd">E</span> or <span class="kbd">X</span> — power-up</span>
+        <span><span class="kbd">P</span> or <span class="kbd">ESC</span> — pause</span>
+      </div>
+      <p class="small">🌟 Zapped? One friendly <b>maths question</b> and you're
+         back in — no timers, unlimited tries.</p>
+      <button id="playBtn" class="bigbtn">▶ Start!</button><br>
+      <button id="replayStoryBtn" class="smallbtn" style="margin-top:10px">📖 Replay the story</button>
+    </div>
+  </div>
+
+  <!-- Intro cinematic UI (drawn on the canvas; these are the controls) -->
+  <div id="introUI" class="hidden">
+    <button id="skipBtn" aria-label="Skip the story">Skip ⏭</button>
+    <div id="introHint">Tap or press Enter ▶ &nbsp;·&nbsp; Esc skips</div>
+  </div>
+
+  <!-- Level picker (opened from the treehouse doorway) -->
+  <div id="overlayLevels" class="overlay hidden">
+    <div class="panel">
+      <h2>🚪 Where to today?</h2>
+      <p class="small">Finish one to unlock the next.</p>
+      <div id="levelList"></div>
+      <button id="levelsCloseBtn" class="bigbtn blue">← Back to the treehouse</button>
+    </div>
+  </div>
+
+  <!-- Settings (opened with the ⚙ button; kept out of the treehouse room) -->
+  <div id="overlaySettings" class="overlay hidden">
+    <div class="panel">
+      <h2>⚙ Settings</h2>
+      <label class="setting"><input type="checkbox" id="muteToggle"> 🔈 Sound off</label>
+      <label class="setting"><input type="checkbox" id="fxToggle"> 🍃 Gentle effects</label>
+      <button id="storyBtn" class="bigbtn blue">📖 Watch the story again</button><br>
+      <button id="settingsCloseBtn" class="bigbtn">✓ Done</button>
+      <div id="resetRow">
+        <button id="resetBtn" class="smallbtn danger">🗑 Reset all progress</button>
+        <span id="resetConfirm" class="hidden">This erases every power-up and crystal. Are you sure?
+          <button id="resetYes" class="smallbtn danger">Yes, erase</button>
+          <button id="resetNo" class="smallbtn">No, keep it</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Maths challenge (used for zaps AND for building power-ups in the workshop) -->
+  <div id="overlayMath" class="overlay hidden">
+    <div class="panel">
+      <h2 id="mathTitle">⚡ Zapped! Let's power back up!</h2>
+      <p id="mathSub" style="margin:0">Solve this to jump back in, Dex!</p>
+      <p id="mathQuestion"></p>
+      <div id="answers">
+        <button class="answer" data-i="0"></button>
+        <button class="answer" data-i="1"></button>
+        <button class="answer" data-i="2"></button>
+        <button class="answer" data-i="3"></button>
+      </div>
+      <p id="mathFeedback"></p>
+      <p id="mathReward" class="hidden"></p>
+      <p id="mathHint" class="hidden"></p>
+      <p class="mathkeys">Tip: you can also press 1, 2, 3 or 4 on the keyboard</p>
+    </div>
+  </div>
+
+  <!-- Pause menu -->
+  <div id="overlayPause" class="overlay hidden">
+    <div class="panel">
+      <h2>⏸ Paused</h2>
+      <p>Take a breather, Dex is waiting!</p>
+      <button id="resumeBtn" class="bigbtn">▶ Keep going</button><br>
+      <button id="pauseMuteBtn" class="bigbtn blue">🔊 Sound on/off</button><br>
+      <button id="pauseRestartBtn" class="bigbtn blue">↺ Restart adventure</button><br>
+      <button id="pauseTreehouseBtn" class="bigbtn blue">🌳 Back to the Treehouse</button>
+    </div>
+  </div>
+
+  <!-- Victory screen -->
+  <div id="overlayVictory" class="overlay hidden">
+    <div class="panel">
+      <h2 id="victoryTitle">🎉 You reached the Star Portal! 🎉</h2>
+      <p id="victoryBlurb">Brilliant work, Dex — Nova would be proud! Greenhaven feels brighter already.</p>
+      <div id="unlockBanner" class="hidden"></div>
+      <div id="victoryStats">
+        <div><span>Time</span><b id="statTime">–</b></div>
+        <div><span>Crystals</span><b id="statCrystals">–</b></div>
+        <div><span>Creatures cured</span><b id="statCures">–</b></div>
+        <div><span>Secrets found</span><b id="statSecrets">–</b></div>
+        <div><span>Maths questions</span><b id="statQuestions">–</b></div>
+        <div><span>First-try maths</span><b id="statAccuracy">–</b></div>
+      </div>
+      <button id="replayBtn" class="bigbtn">▶ Continue</button>
+      <button id="victoryTreehouseBtn" class="bigbtn blue">🌳 Back to the Treehouse</button>
+    </div>
+  </div>
+
+  <div id="overlayGameOver" class="overlay hidden">
+    <div class="panel">
+      <h2>😿 Out of spare lives</h2>
+      <div id="gameOverLives">🐱 × 0</div>
+      <p id="gameOverText">Dex needs a rest. Every cat gets nine more tries — have another go!</p>
+      <button id="gameOverRetryBtn" class="bigbtn">🐱 Try again with 9 lives</button>
+      <button id="gameOverTreehouseBtn" class="bigbtn blue">🌳 Back to the Treehouse</button>
+    </div>
+  </div>
+
+  <!-- TEMPORARY dev shortcut: jump straight into any built level. Sits outside
+       the overlays so it can never be clipped by a panel that doesn't fit.
+       Delete this and the #testJump wiring in game.js to remove. -->
+  <div id="testJump" class="hidden">
+    <span class="tjLabel">🧪 TEST</span>
+    <span id="tjButtons"></span>
+  </div>
+
+  <div id="toast"></div>
+  <div id="debugPanel" class="hidden"></div>
+</div>
+<!-- Loaded with a cache-buster so an edited game.js is never served stale
+     while the game is under active development. -->
+<script>
+  (function () {
+    var s = document.createElement('script');
+    s.src = 'game.js?v=' + Date.now();
+    document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>
