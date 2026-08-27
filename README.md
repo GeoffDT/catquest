@@ -68,7 +68,7 @@ The folder is a self-contained static site — no build step, no dependencies.
 It is already a git repository with one commit and **no remote**; it is
 entirely standalone and shares nothing with any other project.
 
-Create an empty repo on GitHub called  (no README, no .gitignore),
+Create an empty repo on GitHub called `catquest` (no README, no .gitignore),
 then:
 
 ```bash
@@ -78,8 +78,8 @@ git -C "C:/Projects/NumberQuest" push -u origin main
 ```
 
 Then on GitHub: **Settings → Pages → Source: Deploy from a branch →
- / **. A minute later it is live at
-.
+`main` / `(root)`**. A minute later it is live at
+`https://YOURNAME.github.io/catquest/`.
 
 To publish later changes:
 
@@ -87,8 +87,8 @@ To publish later changes:
 git -C "C:/Projects/NumberQuest" add -A && git -C "C:/Projects/NumberQuest" commit -m "what changed" && git -C "C:/Projects/NumberQuest" push
 ```
 
-Every path in the page is relative, so it works from a subfolder URL. 
-is loaded with a  cache-buster, so a republished game is never served
+Every path in the page is relative, so it works from a subfolder URL. `game.js`
+is loaded with a `?v=` cache-buster, so a republished game is never served
 stale — at the cost of re-downloading it each visit, which is the right trade
 for a small file on home wifi.
 
