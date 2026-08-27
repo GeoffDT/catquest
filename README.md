@@ -55,6 +55,13 @@ CatQuest is built to be played on a tablet, not merely to survive on one:
 - **No bounce, no zoom, no text selection.** A thumb sliding off a control
   mid-jump cannot scroll or select the page.
 
+### The icon
+
+`icon-180.png` is generated, not hand-made — run `node tools/make-icon.js` to
+rebuild it. It draws Dex on a Greenhaven hill using only Node’s built-in zlib,
+so there is nothing to install and the icon has an actual source. Edit the
+shapes in that script rather than the PNG.
+
 ### Add it to her Home Screen
 
 This is the step worth doing. In Safari: **Share → Add to Home Screen**.
