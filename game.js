@@ -164,8 +164,8 @@ const TUNING = {
   powerups: {
     // (Spring Boots no longer use a fixed velocity: springJump() solves for
     //  the speed that lands the apex at exactly two normal jump heights.)
-    timeSlowFactor: 0.35,   // Time Bubble: hazard speed multiplier
-    timeDurationS: 6,
+    timeSlowFactor: 0,      // Time Bubble: 0 = the world stops entirely
+    timeDurationS: 5,
     pulseRadius: 180,       // Cure Pulse reach
     shieldInvulnMs: 900,    // grace after the bubble pops
     fullChargeBonusCrystals: 3,
@@ -204,7 +204,7 @@ const POWERUPS = {
   },
   time: {
     name: 'Time Bubble', icon: '⏳', max: 1,
-    desc: '{ACT} to slow everything down — except you!',
+    desc: '{ACT} to freeze everything for 5 seconds — except you!',
     rechargeMsg: 'Power restored — Time Bubble ready! ⏳',
     lockedHint: 'Win it in Level 3!',
   },
@@ -1702,6 +1702,8 @@ function speedMult(x) {
   if (game.localZone && Math.abs(x - game.localZone.x) < A.localRadius) m *= A.localSpeedMult;
   return m;
 }
+// How fast the world runs. 1 normally, 0 inside a Time Bubble. Dex is never
+// multiplied by it — that is the whole point of the power-up.
 const slowFactor = () => slowT > 0 ? TUNING.powerups.timeSlowFactor : 1;
 function sectionOf(x) {
   const s = LEVEL.sections;
@@ -1917,7 +1919,7 @@ function activatePower() {
     power.charges--;
     slowT = P.timeDurationS;
     sfx.slowmo();
-    toast('⏳ Time Bubble! Everything slows but you!');
+    toast('⏳ Time Bubble! Everything freezes but you!');
   } else if (power.id === 'pulse') {
     const px = player.x + player.w / 2, py = player.y + player.h / 2;
     let best = null, bestD = P.pulseRadius;
@@ -1959,22 +1961,26 @@ function update(dt) {
   if (hitstop > 0) { hitstop -= dt; return; }
   game.time += dt;
   if (slowT > 0) slowT -= dt;
-  updateMovers(dt);
+  // wdt is world time: zero while the Time Bubble holds. Dex, the camera and
+  // the purely decorative sparkles keep real time, so the screen still feels
+  // alive rather than broken while everything that can hurt her stands still.
+  const wdt = dt * slowFactor();
+  updateMovers(wdt);
   carryPlayer();
   updatePlayerPhysics(dt);
-  updateCrumblers(dt);
+  updateCrumblers(wdt);
   updatePads(dt);
-  updateEnemies(dt);
+  updateEnemies(wdt);
   checkHazards();
   checkPickupsAndGoals();
   updateParticles(dt);
   updateRings(dt);
-  updateBolts(dt);
-  updateGeysers(dt);
-  updateFalls(dt);
+  updateBolts(wdt);
+  updateGeysers(wdt);
+  updateFalls(wdt);
   updateSlimes(dt);
-  updateFloods(dt);
-  updateBoss(dt);
+  updateFloods(wdt);
+  updateBoss(wdt);
   updateEmitters(dt);
   updateCamera(dt);
   shakeMag *= Math.exp(-6 * dt);

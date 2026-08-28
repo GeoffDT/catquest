@@ -592,6 +592,21 @@ Two things were needed, and the first alone was not enough:
 *The general shape:* whenever a level's furniture is scanned every frame, ask
 what happens when the player is somewhere that furniture does not exist.
 
+**36. The Time Bubble freezes the world; it does not slow it.** It used to run
+hazards at 35%, and only the systems that remembered to call `slowFactor()`
+obeyed — **King Ratthew never did**, so he leapt and fired straight through the
+one power-up meant to save her from exactly that.
+
+It now freezes at the CALL SITE: `update()` computes `wdt = dt * slowFactor()`
+and hands that to the world while Dex, the camera and decorative sparkles keep
+real time. Because the factor is now binary, the systems that still multiply
+by `slowFactor()` internally are multiplying zero by zero — harmless, so
+nothing had to be unpicked. **Add a new hazard and it is frozen automatically,
+provided you take dt from update() rather than reading a clock.**
+
+Verified: movers, enemies, geysers and the King all unmoved 2.5s in, Dex moved
+124px, everything running again afterwards.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
