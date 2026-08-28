@@ -421,7 +421,9 @@
 
   /* ---------- Debug ---------- */
   #debugPanel {
-    position: absolute; left: 10px; bottom: 10px; z-index: 40;
+    /* below the TEST bar: both sit bottom-centre-ish and the panel is wide
+       enough to swallow it, which made the level-skip buttons unclickable */
+    position: absolute; left: 10px; bottom: 10px; z-index: 38;
     background: rgba(0,0,0,.75); color: #8ef5d2;
     font: 12px/1.5 Consolas, monospace; white-space: pre;
     padding: 10px 12px; border-radius: 10px; pointer-events: auto;
