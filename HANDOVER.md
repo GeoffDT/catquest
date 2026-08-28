@@ -518,6 +518,30 @@ far enough that the whole sprite stays visible — and still inside the 56px
 reach of the door station. **A clamp stops a coordinate; it does not stop a
 sprite, which is wider than its hitbox in every direction.**
 
+**31. Every prompt said "press E". There is no E key on an iPad.** The
+workshop, the door and the power-ups all named a control that does not exist
+on the device this is now built for, so on a tablet the treehouse read as
+inert — Sean: *"not sure how u build the powerup in novas workshop? seems
+like nothing there"*. `actHint()` / `ActHint()` / `actKey()` now name whichever
+control the player actually has, and the touch versions name the icon the
+button is showing. **Any new instruction text must go through them.**
+
+The touch buttons were also white-on-translucent-white, which vanished against
+the brightly lit doorway — the very button the new text points at. They are
+dark-filled now, and the power button wears a pulsing gold ring whenever
+pressing it would actually do something.
+
+*Worth knowing:* an empty workshop is CORRECT before the first level is
+finished. Blueprints are the reward for first-clearing a level, so all four
+frames legitimately show "???" until then, and the room says so.
+
+**32. The stale-index.html trap is still live and it bit again.** The CSS
+changes above silently did not apply on reload — computed styles still showed
+the old values while the new class was present. The `no-store` meta from
+gotcha 24 does not work. **The only reliable cache bust for the page itself is
+a query string:** load `localhost:8471/?cb=something-new`. Always verify a CSS
+change by reading `getComputedStyle`, never by looking at a screenshot.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`

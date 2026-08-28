@@ -143,12 +143,26 @@
   }
   body.touch #touch { display: flex; }
   #touch button {
-    pointer-events: auto; border: 3px solid rgba(255,255,255,.65);
-    background: rgba(255,255,255,.30); color: #fff;
+    pointer-events: auto; border: 3px solid rgba(255,255,255,.85);
+    background: rgba(12, 22, 48, .45); color: #fff;
     border-radius: 50%; font-weight: 900;
+    box-shadow: 0 3px 12px rgba(0,0,0,.35);
+    text-shadow: 0 2px 4px rgba(0,0,0,.55);
     touch-action: none; user-select: none; -webkit-user-select: none;
   }
-  #touch button:active { background: rgba(255,255,255,.55); }
+  #touch button:active { background: rgba(12, 22, 48, .72); }
+
+  /* When there is something to build or a door to go through, the button the
+     prompt is talking about says so itself. A child should never have to hunt
+     for the control an instruction just named. */
+  @keyframes calloutPulse {
+    0%, 100% { box-shadow: 0 3px 12px rgba(0,0,0,.35), 0 0 0 0 rgba(255,210,77,.75); }
+    50%      { box-shadow: 0 3px 12px rgba(0,0,0,.35), 0 0 0 12px rgba(255,210,77,0); }
+  }
+  #touch button.callout {
+    border-color: #ffd24d;
+    animation: calloutPulse 1.5s ease-out infinite;
+  }
   #btnLeft, #btnRight {
     width: clamp(88px, calc(13 * var(--gvmin)), 128px);
     height: clamp(88px, calc(13 * var(--gvmin)), 128px);

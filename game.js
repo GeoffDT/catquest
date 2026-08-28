@@ -197,19 +197,19 @@ const POWERUPS = {
   },
   boots: {
     name: 'Spring Boots', icon: '🥾', max: 1,
-    desc: 'Press E in mid-air for one big spring jump!',
+    desc: '{ACT} in mid-air for one big spring jump!',
     rechargeMsg: 'Great thinking! Your Spring Boots are ready! 🥾',
     lockedHint: 'Win it in Level 2!',
   },
   time: {
     name: 'Time Bubble', icon: '⏳', max: 1,
-    desc: 'Press E to slow everything down — except you!',
+    desc: '{ACT} to slow everything down — except you!',
     rechargeMsg: 'Power restored — Time Bubble ready! ⏳',
     lockedHint: 'Win it in Level 3!',
   },
   pulse: {
     name: 'Cure Pulse', icon: '💜', max: 1,
-    desc: 'Press E to cure a Glitch Rat near you!',
+    desc: '{ACT} to cure a Glitch Rat near you!',
     rechargeMsg: 'Brilliant! Cure Pulse charged! 💜',
     lockedHint: 'Win it in Level 4!',
   },
@@ -1865,7 +1865,7 @@ function activatePower() {
   }
   const P = TUNING.powerups;
   if (power.id === 'boots') {
-    if (player.grounded) { toast('Jump first, then press E for a spring boost!'); return; }
+    if (player.grounded) { toast(`Jump first, then ${actHint('🥾')} for a spring boost!`); return; }
     if (player.vine) releaseVine();     // spring off the vine rather than through it
     power.charges--;
     player.vy = -P.bootsJumpVel;
@@ -2297,7 +2297,7 @@ function bossCheckHits() {
       updateHud();
       burst(player.x + player.w / 2, player.y, '#7de3ff', 20, 220);
       sfx.unlock();
-      novaSay('Dex — catch! My Spring Boots. Press E in the air!', 5);
+      novaSay(`Dex — catch! My Spring Boots. ${ActHint('🥾')} in the air!`, 5);
     } else {
       power.charges = POWERUPS[power.id].max;
       updateHud();
@@ -5293,7 +5293,8 @@ function finishBuild() {
   if (st) { burst(st.x, 240, '#ffd24d', 22, 200); burst(st.x, 240, '#7de3ff', 10, 150); }
   addShake(2);
   const def = POWERUPS[buildTarget];
-  toast(`${def.icon} ${def.name} ready!` + (wasFirst ? ' (equipped)' : ' Press E at its bench to equip.'));
+  toast(`${def.icon} ${def.name} ready!` +
+        (wasFirst ? ' (equipped)' : ` ${ActHint('✋')} at its bench to equip.`));
   mathContext = 'zap'; buildTarget = null;
   game.state = 'treehouse';
   updateHud();
@@ -5393,6 +5394,12 @@ function enterTreehouse() {
   ambient = { motes: [], sparks: [], steam: [] };
   updateHud();
 }
+const onTouch = () => document.body.classList.contains('touch');
+// "press E" / "tap the 🔧 button", for use mid-sentence
+const actHint = (icon = '🔧') => onTouch() ? `tap the ${icon} button` : 'press E';
+const ActHint = (icon = '🔧') => onTouch() ? `Tap the ${icon} button` : 'Press E';
+// the short label on the floating tooltip above a station
+const actKey = (icon = '🔧') => onTouch() ? icon : 'E';
 function stationNear() {
   const pc = player.x + player.w / 2;
   let best = null, bd = 56;
@@ -5495,9 +5502,9 @@ function treehouseHint() {
   const anyUnlocked = POWERUP_ORDER.some(id => save.blueprints[id]);
   const unbuilt = POWERUP_ORDER.find(id => save.blueprints[id] && !save.built[id]);
   if (!anyUnlocked) return 'Head out of the door — reach the Star Portal to win your first power-up!';
-  if (unbuilt) return `Your ${POWERUPS[unbuilt].name} is waiting — press E at its bench to build it!`;
-  if (!save.equipped) return 'Press E at a workbench to equip a power-up!';
-  return 'Walk to the doorway and press E to start an adventure!';
+  if (unbuilt) return `Your ${POWERUPS[unbuilt].name} is waiting — ${actHint('🔧')} at its bench to build it!`;
+  if (!save.equipped) return `${ActHint('✋')} at a workbench to equip a power-up!`;
+  return `Walk to the doorway and ${actHint('🚪')} to start an adventure!`;
 }
 // soft contact shadow, so furniture and characters sit ON the floor
 function contactShadow(cx, cy, rx, alpha = 0.26) {
@@ -5919,9 +5926,10 @@ function renderTreehouseRoom() {
   const near = stationNear();
   if (near) {
     let label;
-    if (near.type === 'door') label = 'E — Adventure!';
-    else if (save.built[near.id]) label = save.equipped === near.id ? 'E — Put away' : 'E — Equip';
-    else if (save.blueprints[near.id]) label = 'E — Build it (maths!)';
+    if (near.type === 'door') label = `${actKey('🚪')} — Adventure!`;
+    else if (save.built[near.id]) label = save.equipped === near.id
+      ? `${actKey('✋')} — Put away` : `${actKey('✋')} — Equip`;
+    else if (save.blueprints[near.id]) label = `${actKey('🔧')} — Build it (maths!)`;
     else label = '🔒 Not found yet';
     ctx.font = '900 15px "Segoe UI", sans-serif';
     const lw = ctx.measureText(label).width + 26;
@@ -6007,7 +6015,7 @@ function win() {
     const def = POWERUPS[earned];
     ui.unlockBanner.innerHTML =
       `<span class="ubTop">🎁 New power-up: ${def.icon} ${def.name}!</span>` +
-      `<span class="ubHow">${def.desc}</span>` +
+      `<span class="ubHow">${def.desc.replace('{ACT}', ActHint(def.icon))}</span>` +
       `<span class="ubHow">Build it in your treehouse workshop →</span>`;
     ui.unlockBanner.classList.remove('hidden');
   } else {
@@ -7062,6 +7070,9 @@ function updateHud() {
     const st = stationNear();
     ui.btnPower.classList.remove('hidden');
     ui.btnPower.classList.remove('drained');
+    // ring it only when pressing it would actually do something
+    ui.btnPower.classList.toggle('callout', !!st &&
+      (st.type === 'door' || save.built[st.id] || save.blueprints[st.id]));
     ui.btnPower.textContent = !st ? '❔'
       : st.type === 'door' ? '🚪'
       : save.built[st.id] ? '✋'
@@ -7073,6 +7084,7 @@ function updateHud() {
   }
   ui.settingsBtn.classList.add('hidden');
   ui.pauseBtn.classList.remove('hidden');
+  ui.btnPower.classList.remove('callout');
   ui.healthChip.classList.remove('hidden');
   ui.healthChip.textContent = player.big === false ? '🤍 small!' : '❤️';
   ui.crystalChip.textContent = `⭐ ${game.crystals}`;
