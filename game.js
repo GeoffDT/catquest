@@ -16,7 +16,16 @@
 /* ---------------------------------------------------------------- 1. CONFIG */
 // Turn on the developer panel either by setting this to true, or by opening
 // the game with  index.html?debug=1
+/* Two separate switches, because they are wanted separately.
+
+   ?test=1  — the level-skip bar and every level unlocked. What Sean wants to
+              jump to the boss without replaying four levels.
+   ?debug=1 — all of that PLUS the black diagnostics panel, hitbox outlines
+              and the debug key bindings.
+
+   The plain address is what his daughter gets: neither. */
 const DEBUG_MODE = /[?&]debug=1/.test(location.search) || false;
+const TEST_MODE = DEBUG_MODE || /[?&]test=1/.test(location.search);
 
 // Every difficulty knob lives here — adjust after real child play-testing.
 const TUNING = {
@@ -1644,7 +1653,7 @@ function loadLevel(i) {
 // Debug mode opens every built level so they can be tested in any order.
 function levelUnlocked(i) {
   if (!LEVELS[i].build) return false;
-  if (DEBUG_MODE) return true;
+  if (TEST_MODE) return true;
   return i === 0 || !!(save.levelDone && save.levelDone[i - 1]);
 }
 
@@ -7918,7 +7927,7 @@ function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.033);
     last = now;
     // dev-only: ?debug=1. A level-skip bar is the first thing a child presses.
-    ui.testJump.classList.toggle('hidden', !DEBUG_MODE || game.state !== 'title');
+    ui.testJump.classList.toggle('hidden', !TEST_MODE || game.state !== 'title');
     if (game.state === 'playing') update(dt);
     else if (game.state === 'dying') { game.time += dt; updateDying(dt); }
     else if (game.state === 'treehouse') updateTreehouse(dt);
