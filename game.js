@@ -162,7 +162,8 @@ const TUNING = {
     crumbleRespawnMs: 3000,
   },
   powerups: {
-    bootsJumpVel: 720,      // Spring Boots mid-air jump
+    // (Spring Boots no longer use a fixed velocity: springJump() solves for
+    //  the speed that lands the apex at exactly two normal jump heights.)
     timeSlowFactor: 0.35,   // Time Bubble: hazard speed multiplier
     timeDurationS: 6,
     pulseRadius: 180,       // Cure Pulse reach
@@ -197,7 +198,7 @@ const POWERUPS = {
   },
   boots: {
     name: 'Spring Boots', icon: '🥾', max: 1,
-    desc: '{ACT} in mid-air for one big spring jump!',
+    desc: 'Press jump twice — a double jump, twice as high!',
     rechargeMsg: 'Great thinking! Your Spring Boots are ready! 🥾',
     lockedHint: 'Win it in Level 2!',
   },
@@ -1581,6 +1582,7 @@ const player = {
   support: null, face: 1, anim: 0,
   squash: 0, blinkT: 0, blinkNext: 2.5, prevGrounded: true, prevVy: 0,
   big: true,                    // false = shrunk; the next hit zaps him
+  jumpFromY: 436,                          // the ground he last left, for the boots
   launchT: 0,                              // geode launch is jump-cut immune
   flight: false, flightT: 0,               // mid-catapult-arc
   vine: null, vineHoldT: 0, vineCool: 0,   // the vine he's swinging on, if any
@@ -1865,14 +1867,11 @@ function activatePower() {
   }
   const P = TUNING.powerups;
   if (power.id === 'boots') {
-    if (player.grounded) { toast(`Jump first, then ${actHint('🥾')} for a spring boost!`); return; }
+    // the boots are really a double jump now; the button is just another way in
+    if (player.grounded) { toast('Jump, then press jump again for a big spring!'); return; }
     if (player.vine) releaseVine();     // spring off the vine rather than through it
-    power.charges--;
-    player.vy = -P.bootsJumpVel;
-    player.coyote = 0;
-    player.squash = -0.12;
-    burst(player.x + player.w / 2, player.y + player.h, '#7de3ff', 14, 160);
-    sfx.spring();
+    if (!canSpring()) return;
+    springJump();
   } else if (power.id === 'time') {
     power.charges--;
     slowT = P.timeDurationS;
@@ -2297,7 +2296,7 @@ function bossCheckHits() {
       updateHud();
       burst(player.x + player.w / 2, player.y, '#7de3ff', 20, 220);
       sfx.unlock();
-      novaSay(`Dex — catch! My Spring Boots. ${ActHint('🥾')} in the air!`, 5);
+      novaSay('Dex — catch! My Spring Boots. Press jump twice for a big spring!', 5);
     } else {
       power.charges = POWERUPS[power.id].max;
       updateHud();
@@ -2481,6 +2480,38 @@ function grabVine(v) {
   player.squash = -0.1;
   sfx.grab();
 }
+// The height of one ordinary jump: v^2 / 2g, the number every level is built
+// around. Derived, never written down twice.
+const singleJumpHeight = () => {
+  const T = TUNING.player;
+  return T.jumpVel * T.jumpVel / (2 * T.gravity);
+};
+function springJump() {
+  const T = TUNING.player, one = singleJumpHeight();
+  // aim for twice a normal jump above the ground he took off from
+  const target = player.jumpFromY - one * 2;
+  const climb = clamp(player.y - target, 40, one * 2);
+  player.vy = -Math.sqrt(2 * T.gravity * climb);
+  player.grounded = false; player.support = null;
+  player.coyote = 0; player.buffer = 0;
+  // Immune to the jump cut. Releasing the button a moment after a quick
+  // double-tap would otherwise clamp the spring back to jumpCutVel and eat
+  // the whole boost — which is exactly what "doesn't seem to work" looked
+  // like. The height of this jump is promised, not negotiated by how long a
+  // child happens to hold the button.
+  player.launchT = TUNING.player.padNoCutS;
+  player.squash = -0.16;
+  power.charges--;
+  burst(player.x + player.w / 2, player.y + player.h, '#7de3ff', 16, 190);
+  burst(player.x + player.w / 2, player.y + player.h, '#c9a6ff', 8, 140);
+  sfx.spring();
+  updateHud();
+}
+// can he spring right now? (used by the jump handler and the power button)
+function canSpring() {
+  return game.state === 'playing' && power.id === 'boots' && power.charges > 0 &&
+         !player.grounded && !player.vine && !player.sliding && !player.flight;
+}
 function releaseVine() {
   const T = TUNING.player, v = player.vine;
   const speed = v.omega * v.len;
@@ -2539,7 +2570,7 @@ function updatePlayerPhysics(dt, solidsOverride = null, maxXOverride = null) {
     else if (player.vx > target) player.vx = Math.max(target, player.vx - accel * dt);
   }
 
-  if (player.grounded) player.coyote = coyoteTime();
+  if (player.grounded) { player.coyote = coyoteTime(); player.jumpFromY = player.y; }
   else player.coyote -= dt;
   if (input.jumpPressed) { player.buffer = T.jumpBufferMs / 1000; input.jumpPressed = false; }
   else player.buffer -= dt;
@@ -2583,6 +2614,8 @@ function updatePlayerPhysics(dt, solidsOverride = null, maxXOverride = null) {
     player.support = null;
     player.squash = -0.14;               // stretch on take-off
     sfx.jump();
+  } else if (player.buffer > 0 && canSpring()) {
+    springJump();                        // Spring Boots: jump again in mid-air
   }
   if (player.launchT > 0) player.launchT -= dt;
   if (!input.jump && !player.flight && player.launchT <= 0 &&

@@ -376,7 +376,7 @@ maths question** at its bench:
 | Power-up | How it works | Unlocked by |
 |---|---|---|
 | 🫧 Bubble Shield | Passively absorbs one enemy/hazard hit | First clear of Level 1 |
-| 🥾 Spring Boots | One big mid-air spring jump (E/X in the air) | First clear of Level 2 |
+| 🥾 Spring Boots | A double jump — press jump again in mid-air to reach exactly twice a normal jump height | First clear of Level 2 |
 | ⏳ Time Bubble | Slows hazards to 35% for 6 s; Dex stays fast | First clear of Level 3 |
 | 💜 Cure Pulse | Cures one nearby Glitch creature (E/X) | First clear of Level 4 |
 

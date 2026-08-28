@@ -542,6 +542,24 @@ gotcha 24 does not work. **The only reliable cache bust for the page itself is
 a query string:** load `localhost:8471/?cb=something-new`. Always verify a CSS
 change by reading `getComputedStyle`, never by looking at a screenshot.
 
+**33. The Spring Boots are a double jump, and "twice as high" is literal.**
+They used to sit on the power-up button and set `vy` to a flat 720 — but an
+ordinary jump already starts at 760, so pressing them early took the charge
+and gave nothing back. Sean: *"doesnt seem to work - lets keep it simple,
+double press quickly, and he jumps twice as high."*
+
+`springJump()` now solves for the velocity that puts the apex exactly two
+normal jump heights above the ground he took off from, so the height is the
+same whether she presses after 90ms or 350ms (measured: 255px against a 262px
+target at every timing). **Do not replace that with a fixed velocity** — a
+fixed number is only correct at one moment in the arc.
+
+It is also immune to the jump cut (`player.launchT`). Without that, letting go
+of the button just after a quick double-tap clamps the spring back to
+`jumpCutVel` and eats the entire boost — which is precisely what "doesn't
+seem to work" looked like. Verified: holding jump does NOT spend the charge,
+pressing on the ground does not spend it, and an empty charge does nothing.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
