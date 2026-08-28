@@ -607,6 +607,28 @@ provided you take dt from update() rather than reading a clock.**
 Verified: movers, enemies, geysers and the King all unmoved 2.5s in, Dex moved
 124px, everything running again afterwards.
 
+**37. iOS Safari IGNORES `user-scalable=no`.** It has since iOS 10, on
+purpose, for accessibility — so the viewport tag never prevented anything and
+the page could always be zoomed. On a fixed 16:9 layout with controls pinned
+to the corners, any zoom pushes the jump button off the screen, and a child
+has no idea what happened or how to undo it. Sean's daughter lost the jump
+button after double-tapping a maths answer.
+
+Three guards, because there are three routes in:
+1. `* { touch-action: manipulation }` — the buttons already had it, the maths
+   PANEL and its question text did not, and that is where she tapped.
+2. `gesturestart/change/end` → preventDefault, which is the only way to stop a
+   pinch on iOS. Safari-only events; nothing else ever fires them.
+3. A `touchend` double-tap guard for the gaps — **which deliberately exempts
+   `#touch, button, .answer, .lvlCard, .iconbtn`**. The double jump IS two
+   rapid taps on the jump button; swallowing the second would have broken the
+   feature this was meant to protect.
+
+And a `#zoomHint` banner driven by `visualViewport.scale`, because a wedged
+zoom is unrecoverable for a seven-year-old unless something tells her to pinch
+back out. **Verify zoom fixes with `getComputedStyle`, and always re-test that
+rapid taps on the controls still register.**
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`

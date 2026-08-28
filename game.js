@@ -256,7 +256,7 @@ const ui = {
   muteToggle: $('muteToggle'), fxToggle: $('fxToggle'),
   resetBtn: $('resetBtn'), resetConfirm: $('resetConfirm'),
   resetYes: $('resetYes'), resetNo: $('resetNo'),
-  toast: $('toast'), debugPanel: $('debugPanel'),
+  toast: $('toast'), debugPanel: $('debugPanel'), zoomHint: $('zoomHint'),
   btnLeft: $('btnLeft'), btnRight: $('btnRight'),
   btnJump: $('btnJump'), btnPower: $('btnPower'),
 };
@@ -573,6 +573,48 @@ onViewportChange();
 
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   document.body.classList.add('touch');
+}
+
+/* ---------------------------------------------------------- ZOOM GUARDS --
+   CatQuest is a fixed 16:9 layout with controls pinned to the corners. Any
+   page zoom pushes those controls off the screen, and a child has no idea
+   what has happened or how to undo it — Sean's daughter lost the jump button
+   to exactly this after double-tapping a maths answer.
+
+   iOS ignores user-scalable=no, so this has to be done by hand.            */
+
+// 1. Pinch. These are Safari's own non-standard events; other browsers simply
+//    never fire them, so there is nothing to feature-detect.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+
+// 2. Double-tap. touch-action: manipulation covers this on every element that
+//    honours it; this catches the gaps (and older iOS, which honours less).
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => {
+  const now = Date.now();
+  // NEVER touch the game's own controls. The double jump is two deliberate
+  // rapid taps on the jump button, and answering a maths question quickly is
+  // normal — those all carry touch-action: manipulation already, so their
+  // double-tap zoom is handled without swallowing the second tap.
+  const onControl = e.target && e.target.closest &&
+                    e.target.closest('#touch, button, .answer, .lvlCard, .iconbtn');
+  if (!onControl && now - lastTouchEnd < 320) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+
+/* 3. And if it still happens — a wedged zoom is unrecoverable for a seven-
+      year-old, so say what to do about it. visualViewport reports the pinch
+      scale; it is absent on older browsers, where this simply never runs. */
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const checkZoom = () => {
+    const zoomed = vv.scale > 1.05;
+    if (ui.zoomHint) ui.zoomHint.classList.toggle('hidden', !zoomed);
+  };
+  vv.addEventListener('resize', checkZoom);
+  vv.addEventListener('scroll', checkZoom);
+  checkZoom();
 }
 
 /* ---------------------------------------------------------- 7. MATHS QUIZ */

@@ -23,6 +23,9 @@
 <title>CatQuest — Dex the Cat</title>
 <style>
   * { box-sizing: border-box; }
+  /* Kill double-tap-to-zoom everywhere. The d-pad overrides this with
+     touch-action: none, which it needs for held drags. */
+  * { touch-action: manipulation; }
   html, body {
     margin: 0; padding: 0; height: 100%;
     background: linear-gradient(160deg, #1b2a4a 0%, #2e1f47 100%);
@@ -65,6 +68,14 @@
      of screen and buries the touch pads, so ask for a turn rather than serve
      something unplayable. Only on touch devices — a narrow desktop window is
      the player's own business. */
+  #zoomHint {
+    position: fixed; left: 50%; top: 10px; transform: translateX(-50%);
+    z-index: 95; background: rgba(12,22,48,.92); color: #ffd24d;
+    border: 2px solid #ffd24d; border-radius: 999px;
+    padding: 10px 18px; font-weight: 900; font-size: 15px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.45); pointer-events: none;
+    text-align: center; max-width: 92vw;
+  }
   #rotate {
     position: fixed; inset: 0; z-index: 90;
     display: none; flex-direction: column;
@@ -449,6 +460,12 @@
   </div>
 
   <!-- Touch controls -->
+  <!-- Shown only if the page somehow ends up zoomed: without it a child is
+       stuck looking at a corner of the game with no idea why. -->
+  <div id="zoomHint" class="hidden">
+    <span>🔍 Pinch with two fingers to zoom back out</span>
+  </div>
+
   <div id="rotate">
     <div class="rotIcon">📱</div>
     <h2>Turn your iPad sideways</h2>
