@@ -414,10 +414,10 @@ Two switches, deliberately separate:
 | URL | What you get |
 | --- | --- |
 | plain address | the game, nothing else — this is what a child gets |
-|  | the 🧪 TEST level-skip bar and every level unlocked |
-|  | all of the above **plus** the diagnostics panel, hitbox outlines and debug keys |
+| `?test=1` | the 🧪 TEST level-skip bar and every level unlocked |
+| `?debug=1` | all of the above **plus** the diagnostics panel, hitbox outlines and debug keys |
 
-Use  to jump straight to a level without the black panel in the corner.
+Use `?test=1` to jump straight to a level without the black panel in the corner.
 
 
 Open `index.html?debug=1` (or set `DEBUG_MODE = true` in `game.js`). Shows
