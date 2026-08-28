@@ -659,9 +659,41 @@ const MathQuiz = (() => {
              type: 'div', table: t };
   }
 
+  function makeSequence() {
+    const roll = Math.random();
+    if (roll < 0.62) {                       // counting up: 1, 4, 7, 10, ▢
+      const step = pick([2, 3, 4, 5, 6, 10]);
+      const start = ri(1, 20);
+      const terms = [0, 1, 2, 3].map(i => start + step * i);
+      const answer = start + step * 4;
+      return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
+               key: `sequp${start}+${step}`,
+               hint: `The numbers go up by ${step} each time. ${terms[3]} + ${step} = ?`,
+               type: 'seq', table: step };
+    }
+    if (roll < 0.87) {                       // counting back: 40, 34, 28, 22, ▢
+      const step = pick([2, 3, 4, 5, 10]);
+      const answer = ri(0, 12);
+      const terms = [4, 3, 2, 1].map(i => answer + step * i);
+      return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
+               key: `seqdn${terms[0]}-${step}`,
+               hint: `The numbers go down by ${step} each time. ${terms[3]} − ${step} = ?`,
+               type: 'seq', table: step };
+    }
+    const start = pick([1, 2, 3, 5]);        // doubling: 3, 6, 12, 24, ▢
+    const terms = [0, 1, 2, 3].map(i => start * Math.pow(2, i));
+    return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer: start * 16,
+             key: `seqdbl${start}`,
+             hint: `Each number is double the one before. Double ${terms[3]} is…?`,
+             type: 'seq', table: terms[3] };
+  }
+
   const GENS = [
-    [makeAdd, 22], [makeSub, 20], [makeMul, 20],
-    [makeDiv, 13], [makeMissing, 13], [makeWord, 12],
+    [makeAdd, 20], [makeSub, 18], [makeMul, 18],
+    [makeDiv, 12], [makeMissing, 12], [makeWord, 11],
+    // roughly one question in eight — enough for variety, not enough to
+    // crowd out the tables she is actually meant to be practising
+    [makeSequence, 13],
   ];
   const totalW = GENS.reduce((s, g) => s + g[1], 0);
   function pickGen() {
