@@ -4582,7 +4582,8 @@ function drawPlayer() {
   // shrunken Dex is visibly smaller — the one-hit warning is impossible to miss
   const size = player.big === false ? TUNING.player.smallScale : 1;
   ctx.scale(player.face * sx * size, sy * size);
-  const run = Math.abs(player.vx) > 20 && player.grounded;
+  // sliding is grounded and fast, but it is the opposite of running
+  const run = !player.sliding && Math.abs(player.vx) > 20 && player.grounded;
   const ph = Math.sin(player.anim * 10);
   // tail
   ctx.strokeStyle = '#d67f22'; ctx.lineWidth = 6; ctx.lineCap = 'round';
@@ -4595,12 +4596,25 @@ function drawPlayer() {
   if (run) {
     ctx.beginPath(); ctx.ellipse(-6 + ph * 4, -4, 5, 4, 0, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.ellipse(7 - ph * 4, -4, 5, 4, 0, 0, 7); ctx.fill();
+  } else if (player.sliding) {
+    // On his backside: both legs straight out in front, roughly square to the
+    // body, feet cocked up. Drawn before the body so the hips tuck under it.
+    ctx.beginPath(); ctx.ellipse(12, -10, 14, 4.6, -0.10, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(13, -3.5, 14, 4.6, -0.02, 0, 7); ctx.fill();
+    ctx.fillStyle = '#d67f22';                       // paws, turned up
+    ctx.beginPath(); ctx.ellipse(26, -12.5, 5.2, 3.6, -0.55, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(27, -5, 5.2, 3.6, -0.5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#e8912f';
   } else if (!player.grounded) {
     ctx.beginPath(); ctx.ellipse(-7, -6, 5, 4, -0.4, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.ellipse(8, -3, 5, 4, 0.4, 0, 7); ctx.fill();
   } else {
     ctx.beginPath(); ctx.ellipse(-6, -4, 5, 4, 0, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.ellipse(7, -4, 5, 4, 0, 0, 7); ctx.fill();
+  }
+  if (player.sliding) {                              // trailing arm, propping him up
+    ctx.strokeStyle = '#e8912f'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-6, -20); ctx.lineTo(-17, -6); ctx.stroke();
   }
   // body
   ctx.fillStyle = '#f5a144';
@@ -6150,12 +6164,21 @@ function drawNovaActor(x, yFeet, opts = {}) {
   ctx.beginPath(); ctx.arc(9, hy + 3, 3, 0.2, Math.PI - 0.6); ctx.stroke();
   ctx.restore();
 }
-function drawRatthew(x, yFeet, s, t, face = 1) {
+function drawRatthew(x, yFeet, s, t, face = 1, opts = {}) {
+  const cured = !!opts.cured;
+  const crown = opts.crown !== false;               // the Gamma Crown, or a plain one
+  // cured, he wears the same browns as every other creature Dex has healed
+  const fur    = cured ? '#8a6242' : '#6b5a9e';
+  const furLit = cured ? '#a67a52' : '#8d7cc0';
+  const furDim = cured ? '#6f4e39' : '#574a85';
+  const feet   = cured ? '#5f4330' : '#5a4d8a';
   ctx.save();
   ctx.translate(x, yFeet);
   ctx.scale(s * face, s);
-  ctx.fillStyle = 'rgba(140,255,120,0.14)';        // radioactive aura
-  ctx.beginPath(); ctx.arc(0, -14, 30, 0, 7); ctx.fill();
+  if (!cured) {
+    ctx.fillStyle = 'rgba(140,255,120,0.14)';      // radioactive aura
+    ctx.beginPath(); ctx.arc(0, -14, 30, 0, 7); ctx.fill();
+  }
   ctx.strokeStyle = '#e8a2b8'; ctx.lineWidth = 3; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(-15, -6);
   ctx.quadraticCurveTo(-26, -12 + Math.sin(t * 3) * 2, -29, -3); ctx.stroke();
@@ -6164,35 +6187,54 @@ function drawRatthew(x, yFeet, s, t, face = 1) {
   ctx.moveTo(-6, -24);
   ctx.quadraticCurveTo(-24, -14 + Math.sin(t * 2.6) * 3, -19, 0);
   ctx.lineTo(-4, -6); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#6b5a9e';                       // plump royal body
+  ctx.fillStyle = fur;                             // plump royal body
   ctx.beginPath(); ctx.ellipse(0, -11, 16, 12, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#8d7cc0';
+  ctx.fillStyle = furLit;
   ctx.beginPath(); ctx.ellipse(3, -9, 9, 8, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#5a4d8a';                       // feet
+  ctx.fillStyle = feet;                            // feet
   ctx.beginPath(); ctx.ellipse(-6, -1.5, 4.5, 2.5, 0, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.ellipse(6, -1.5, 4.5, 2.5, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#6b5a9e';                       // head + snout
+  ctx.fillStyle = fur;                             // head + snout
   ctx.beginPath(); ctx.arc(8, -24, 8, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.moveTo(12, -28); ctx.lineTo(23, -21); ctx.lineTo(12, -17); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#574a85';                       // ear
+  ctx.fillStyle = furDim;                          // ear
   ctx.beginPath(); ctx.arc(4, -31, 4.5, 0, 7); ctx.fill();
   ctx.fillStyle = '#f2b7c6';
   ctx.beginPath(); ctx.arc(4, -31, 2.2, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgba(140,255,120,0.45)';        // huge glowing eye
-  ctx.beginPath(); ctx.arc(12, -25, 4.4, 0, 7); ctx.fill();
-  ctx.fillStyle = '#c6ffb8';
-  ctx.beginPath(); ctx.arc(12, -25, 2.2, 0, 7); ctx.fill();
-  ctx.strokeStyle = '#2a1f45'; ctx.lineWidth = 1.6; // gleeful grin
-  ctx.beginPath(); ctx.arc(14, -19.5, 4.5, 0.3, Math.PI - 0.9); ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(13, -19, 2, 2.4); ctx.fillRect(16, -18.4, 2, 2.2);
-  ctx.fillStyle = '#ffd24d';                       // the Gamma Crown
-  ctx.beginPath();
-  ctx.moveTo(1, -35); ctx.lineTo(3, -42); ctx.lineTo(6, -36); ctx.lineTo(9, -43);
-  ctx.lineTo(12, -36); ctx.lineTo(14, -41); ctx.lineTo(15, -34); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#e8443f';
-  ctx.beginPath(); ctx.arc(8, -37, 1.6, 0, 7); ctx.fill();
-  if (Math.sin(t * 7) > 0.2) {                     // radioactive sparks
+  if (cured) {                                     // an ordinary rat's eye
+    ctx.fillStyle = '#2a1c10';
+    ctx.beginPath(); ctx.arc(12, -25, 2.6, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(12.9, -25.9, 0.9, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#5c3f2a'; ctx.lineWidth = 1.5;   // a small, sheepish smile
+    ctx.beginPath(); ctx.arc(15, -20.5, 3.6, 0.45, Math.PI - 0.75); ctx.stroke();
+  } else {
+    ctx.fillStyle = 'rgba(140,255,120,0.45)';      // huge glowing eye
+    ctx.beginPath(); ctx.arc(12, -25, 4.4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#c6ffb8';
+    ctx.beginPath(); ctx.arc(12, -25, 2.2, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#2a1f45'; ctx.lineWidth = 1.6;   // gleeful grin
+    ctx.beginPath(); ctx.arc(14, -19.5, 4.5, 0.3, Math.PI - 0.9); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(13, -19, 2, 2.4); ctx.fillRect(16, -18.4, 2, 2.2);
+  }
+  if (crown) {
+    if (cured) {                                   // a plain little crown
+      ctx.fillStyle = '#e8bf4a';
+      ctx.beginPath();
+      ctx.moveTo(2, -33); ctx.lineTo(4, -38); ctx.lineTo(8, -34); ctx.lineTo(12, -38);
+      ctx.lineTo(14, -33); ctx.closePath(); ctx.fill();
+      ctx.fillRect(2, -33.5, 12, 2);
+    } else {
+      ctx.fillStyle = '#ffd24d';                   // the Gamma Crown
+      ctx.beginPath();
+      ctx.moveTo(1, -35); ctx.lineTo(3, -42); ctx.lineTo(6, -36); ctx.lineTo(9, -43);
+      ctx.lineTo(12, -36); ctx.lineTo(14, -41); ctx.lineTo(15, -34); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e8443f';
+      ctx.beginPath(); ctx.arc(8, -37, 1.6, 0, 7); ctx.fill();
+    }
+  }
+  if (!cured && Math.sin(t * 7) > 0.2) {           // radioactive sparks
     ctx.strokeStyle = 'rgba(140,255,120,0.85)'; ctx.lineWidth = 1.6;
     const sx = Math.sin(t * 13) * 8;
     ctx.beginPath();
@@ -6667,7 +6709,7 @@ function outroScene2(t) {
   });
   outroGlow(clamp((t - 0.6) / 1.6, 0, 1), 'rgba(255,214,130,ALPHA)');
   // him: one times bigger, sitting, small and sorry
-  drawRatthew(430, 440, 1.0, game.time, 1);
+  drawRatthew(430, 440, 1.0, game.time, 1, { cured: true, crown: false });
   drawDexActor(560, 440, { face: -1, expr: 'happy' });
   drawNovaActor(626, 440, { face: -1 });
   if (t > 2.6) {                                    // the 50x badge, undone
@@ -6759,7 +6801,7 @@ function outroScene5(t) {
   // everyone home, the King included: he was cured, not defeated
   drawDexActor(300, 430, { face: 1, expr: 'happy' });
   drawNovaActor(372, 430, { face: -1, arm: 'press' });
-  drawRatthew(470, 430, 0.9, game.time, -1);
+  drawRatthew(470, 430, 0.9, game.time, -1, { cured: true });
   drawFriendlyRatAt(540 + Math.sin(game.time * 0.7) * 22, 430,
                     Math.cos(game.time * 0.7) > 0 ? 1 : -1, game.time);
   drawMozzie({ x: 200 + Math.sin(game.time * 1.2) * 30,
@@ -7672,6 +7714,14 @@ function frame(now) {
     else if (game.state === 'treehouse') updateTreehouse(dt);
     else if (game.state === 'intro') updateIntro(dt);
     if (fadeAlpha > 0 && game.state !== 'dying') fadeAlpha = Math.max(0, fadeAlpha - dt * 2.2);
+    // The screen shake decays inside the per-state updaters, and states like
+    // victory, paused, gameover and math have no updater at all. addShake(4)
+    // in win() therefore stuck at 4 for as long as the card was up, and
+    // render() kept jittering a frozen world by a random +-4px every frame.
+    // Behind an overlay nothing is moving, so a shake is never anything but
+    // noise: clear it outright rather than decaying it.
+    if (game.state !== 'playing' && game.state !== 'dying' &&
+        game.state !== 'treehouse' && game.state !== 'intro') shakeMag = 0;
     render();
     if (DEBUG_MODE) renderDebugPanel();
   } catch (err) {

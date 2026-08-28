@@ -483,6 +483,31 @@ button is the only way on.
 behaviour would have been worse than leaving it alone. A label that merely
 confuses is a muddle; a label that confidently states the wrong thing is a lie.
 
+**27. A state with no updater freezes its animation values, it does not stop
+them being used.** `win()` calls `addShake(4)` and then sets the state to
+`victory`. The shake decays inside the per-state updaters, and `frame()` runs
+no updater for `victory` — so `shakeMag` stayed at 4 for as long as the card
+was up while `render()` kept offsetting a completely frozen world by a random
++-4px every frame. Sean: *"the background is very shaky - it looks buggy and
+unprofessional"*. It affected `paused`, `gameover` and `math` too.
+
+`frame()` now zeroes the shake outright in any state without an updater.
+**When you add a state, ask what stops decaying in it** — shake, hitstop,
+slow-motion and fade all live outside `update()`.
+
+**28. `run` meant "grounded and moving fast", which is also true of sliding.**
+Dex did his running cycle all the way down the storm drain. The slide now
+excludes itself from `run` and has its own pose: legs straight out square to
+the body, paws cocked up, one arm braced behind.
+
+**29. The ending said cured; the drawing said radioactive.** King Ratthew kept
+his green aura, glowing green eye, green sparks, corrupted purple fur and the
+Gamma Crown through the whole ending — so the scene that tells a child he is
+better showed him still visibly ill, only smaller. `drawRatthew` now takes
+`{cured, crown}` and repaints him in the same browns as every other cured
+creature (#8a6242 / #a67a52 / #2a1c10, from drawRat). **If a character changes
+in the story, check the art changes with it.**
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
