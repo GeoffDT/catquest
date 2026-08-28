@@ -1753,13 +1753,22 @@ function shrinkPlayer() {
   return true;
 }
 function dropChute() { player.chute = null; player.sliding = false; }
+// Everything that has taken hold of Dex's movement, let go at once. Any code
+// that moves him somewhere new must call this, or that somewhere inherits the
+// last place's physics.
+function clearMovementState() {
+  dropVine(); dropChute();
+  player.flight = false; player.flightT = 0;
+  player.launchT = 0;
+  player.vx = 0; player.vy = 0;
+}
 function dropVine() {
   player.vine = null; player.vineHoldT = 0; player.vineCool = 0;
   for (const v of LEVEL.vines) { v.theta = 0; v.omega = 0; }
 }
 function placeAtCheckpoint() {
   for (const fl of LEVEL.floods) { fl.y = fl.startY; fl.active = false; }
-  dropVine(); dropChute();
+  clearMovementState();
   const cp = LEVEL.checkpoints[game.checkpoint];
   setPlayerBig(true);                 // always start a life at full size
   player.x = cp.x; player.y = cp.y - player.h - 2;
@@ -2606,8 +2615,10 @@ function updatePlayerPhysics(dt, solidsOverride = null, maxXOverride = null) {
   else player.coyote -= dt;
   if (input.jumpPressed) { player.buffer = T.jumpBufferMs / 1000; input.jumpPressed = false; }
   else player.buffer -= dt;
-  // standing at the lip of a chute, jump sets him off
-  {
+  // Standing at the lip of a chute, jump sets him off. Levels only: the
+  // treehouse shares this function but not the level's furniture, and LEVEL
+  // still holds the last level played while Dex is at home.
+  if (game.state === 'playing') {
     const mx = player.x + player.w / 2;
     for (const c of LEVEL.chutes) {
       if (player.grounded && player.buffer > 0 && mx > c.x1 - 70 && mx < c.x1 + 50) {
@@ -2627,7 +2638,8 @@ function updatePlayerPhysics(dt, solidsOverride = null, maxXOverride = null) {
   idleVines(dt);
   if (player.vine) {
     if (player.buffer > 0 && player.vineHoldT >= T.vineMinHoldS) releaseVine();
-  } else if (player.buffer > 0 && player.vineCool <= 0 && !player.grounded) {
+  } else if (player.buffer > 0 && player.vineCool <= 0 && !player.grounded &&
+             game.state === 'playing') {          // same reason as the chutes
     for (const v of LEVEL.vines) {
       const e = vineEnd(v);
       const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
@@ -4447,6 +4459,7 @@ function drawGeode(s) {
   ctx.restore();
 }
 function updatePads(dt) {
+  if (game.state !== 'playing') return;      // level furniture, level only
   for (const pad of (LEVEL.pads || [])) {
     if (pad.fire > 0) pad.fire = Math.max(0, pad.fire - dt * 3.2);
     // launchT doubles as the re-trigger guard: while it runs Dex is already on
@@ -5453,7 +5466,8 @@ function enterTreehouse() {
   const doorSt = TREEHOUSE.stations.find(s => s.type === 'door');
   player.x = save.completions > 0 ? doorSt.x - player.w / 2 : 56;
   player.y = TREEHOUSE.floor - player.h - 2;
-  player.vx = 0; player.vy = 0; player.grounded = true;
+  clearMovementState();               // he is not still on the sewer's slide
+  player.grounded = true;
   player.support = null; player.face = save.completions > 0 ? -1 : 1;
   input.left = input.right = input.jump = input.jumpPressed = false;
   particles = []; rings = []; bolts = []; slowT = 0; shakeMag = 0; game.invuln = 0;
@@ -6964,6 +6978,7 @@ function startCinema(scenes, onDone) {
   intro.scene = 0; intro.t = 0; intro.paused = false; intro.waiting = false;
   intro.fired = new Set(); intro.musicT = 0; intro.musicIdx = 0;
   input.left = input.right = input.jump = input.jumpPressed = false;
+  clearMovementState();
   particles = []; rings = []; fadeAlpha = 0; shakeMag = 0;
   ['overlayTitle', 'overlayMath', 'overlayPause', 'overlayVictory', 'overlayGameOver']
     .forEach(k => ui[k].classList.add('hidden'));
@@ -7186,6 +7201,7 @@ function updateHud() {
 
 function showTitle() {
   game.state = 'title';
+  clearMovementState();
   document.body.classList.remove('in-intro');
   ['overlayMath', 'overlayPause', 'overlayVictory', 'overlayGameOver', 'overlaySettings', 'introUI']
     .forEach(k => ui[k].classList.add('hidden'));

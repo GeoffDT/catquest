@@ -572,6 +572,26 @@ of the button just after a quick double-tap clamps the spring back to
 seem to work" looked like. Verified: holding jump does NOT spend the charge,
 pressing on the ground does not spend it, and an empty charge does nothing.
 
+**35. `LEVEL` still holds the last level played while Dex is in the treehouse,
+and the treehouse shares `updatePlayerPhysics`.** Going home from the sewer
+mid-slide left him off screen, flickering in and out — the chute-lip detector
+scans `LEVEL.chutes`, the treehouse door happens to sit within grab range of
+the sewer chute's mouth, so every frame re-attached him and `updateSlide`
+drove him a thousand pixels out of a 768px room.
+
+Two things were needed, and the first alone was not enough:
+
+1. `clearMovementState()` — one helper that lets go of vine, chute, flight and
+   launch together. Called by `enterTreehouse`, `showTitle`, `startCinema` and
+   `placeAtCheckpoint`. **Anything that moves Dex somewhere new must call it**,
+   or the new place inherits the old place's physics.
+2. The things that GRAB him — chute lips, vine reach, geodes — are now gated
+   on `game.state === 'playing'`. Clearing state does nothing if the next
+   frame re-attaches him.
+
+*The general shape:* whenever a level's furniture is scanned every frame, ask
+what happens when the player is somewhere that furniture does not exist.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
