@@ -1609,6 +1609,14 @@ const TREEHOUSE = {
   // the walk between the workshop and the door
   solids: [
     { x: -40, y: ROOM_FLOOR, w: ROOM_W + 80, h: 80, kind: 'floor' },
+    // Walls. Without these the only thing stopping Dex was the world clamp at
+    // x = ROOM_W - his width, which sits at EXACTLY the viewport edge: his
+    // whiskers rendered past 960 on the right and his tail past 0 on the left,
+    // so he looked like he was walking out of the picture. These stop him with
+    // the whole sprite still on screen, and still well inside the 56px reach
+    // of the door station at x 716.
+    { x: -60, y: 0, w: 80, h: ROOM_FLOOR, kind: 'wall' },   // stops him at x 20
+    { x: 724, y: 0, w: 80, h: ROOM_FLOOR, kind: 'wall' },   // stops him at x 694
   ],
   chair: { x: 176, y: 338, w: 56, h: 10 },   // Nova's empty chair (decorative)
   stations: [

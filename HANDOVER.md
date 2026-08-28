@@ -508,6 +508,16 @@ better showed him still visibly ill, only smaller. `drawRatthew` now takes
 creature (#8a6242 / #a67a52 / #2a1c10, from drawRat). **If a character changes
 in the story, check the art changes with it.**
 
+**30. The world clamp is not a wall.** The treehouse had only a floor solid,
+so the only thing stopping Dex was `moveAndCollide`’s clamp to
+`ROOM_W - player.w`. The room is exactly one viewport wide, so that clamp sits
+at EXACTLY the screen edge: his whiskers rendered past 960 on the right and
+his tail past 0 on the left. Sean: *"i just went off the screen at the
+treehouse on the right hand side"*. The room now has real wall solids inset
+far enough that the whole sprite stays visible — and still inside the 56px
+reach of the door station. **A clamp stops a coordinate; it does not stop a
+sprite, which is wider than its hitbox in every direction.**
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
