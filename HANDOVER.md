@@ -629,6 +629,26 @@ zoom is unrecoverable for a seven-year-old unless something tells her to pinch
 back out. **Verify zoom fixes with `getComputedStyle`, and always re-test that
 rapid taps on the controls still register.**
 
+**38. Standing on the King's head was three free hits.** He never shook her
+off, so there was no reason to get down. Two rules now:
+
+- `kingShakeOff()` throws Dex clear on EVERY crown contact, scoring or not,
+  and cannot hurt him (`game.invuln` covers the whole flight).
+- `boss.crownArmed` — one scoring hit per approach; **touching the floor**
+  re-arms it. The crown is not solid, so bouncing off his head never counts.
+
+*The trap I fell into on the way:* arming-by-landing alone softlocked the
+fight. The padded crown box is wider than the first shove carried him, so he
+bounced on the King's head for ever — never landing, therefore never
+re-arming, unable to damage him again. **A rule that requires an event must
+guarantee that event can happen.** Shaking him off on every contact is what
+closes it. Verified: three approaches give exactly three hits, and he lands
+and re-arms between each.
+
+Lasers went from one attempt every 2.3s to every 1.84s (+25%). `roofChance`
+is untouched, so ceiling shots and aimed shots each got 25% more frequent,
+which is what was asked for.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`

@@ -83,9 +83,18 @@ const TUNING = {
     poundEveryS: 3.0,       // phase 3: floor pounds, head down after each
     poundHeadDownS: 2.6,
     waveSpeed: 240,         // the shockwave a pound sends along the floor
+    // Knocked off his own crown. Standing on his head was three free hits —
+    // he never shook her off, so there was no reason to ever get down. This
+    // pulse throws Dex clear and CANNOT hurt him: the fight should be won by
+    // reading the rock and the beams, not by camping on his hat.
+    crownPulseVx: 520,      // thrown this far sideways…
+    crownPulseVy: 620,      // …and this high, which clears his 250px width
+    crownPulseInvulnS: 1.1, // and nothing may touch Dex on the way down
     // The Gamma Crown lets him fire green beams out of his eyes. Sometimes he
     // aims at Dex, sometimes at the ceiling — which brings the roof down.
-    laserEveryS: 2.3,       // how often he tries it
+    laserEveryS: 1.84,      // how often he tries it (was 2.3: +25% rate, and
+                            // roofChance splits it, so ceiling shots and aimed
+                            // shots each got 25% more frequent)
     laserWarnS: 1.1,        // eyes charge up first — never fire without warning
     laserFireS: 0.45,       // and the beam itself is brief
     laserH: 20,             // beam thickness
@@ -444,6 +453,8 @@ const sfx = {
   pop()       { AudioSys.tone(620, 0.08, { type: 'triangle', vol: 0.09 });
                 AudioSys.tone(920, 0.1, { type: 'triangle', vol: 0.07, delay: 0.05 }); },
   spring()    { AudioSys.tone(240, 0.22, { type: 'square', vol: 0.07, slide: 420 }); },
+  shakeOff()  { AudioSys.tone(140, 0.30, { type: 'sine', vol: 0.09, slide: -60 });
+                AudioSys.tone(320, 0.18, { type: 'triangle', vol: 0.05, slide: 260 }); },
   slowmo()    { AudioSys.tone(820, 0.5, { type: 'sine', vol: 0.08, slide: -500 }); },
   unlock()    { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) =>
                   AudioSys.tone(f, 0.18, { type: 'triangle', vol: 0.09, delay: i * 0.09 })); },
@@ -2075,7 +2086,8 @@ function initBoss() {
            leapT: 0, leapFrom: 0, leapTo: 0, winded: 0, busy: 0,
            headDown: 0, hurt: 0, shout: '', shoutT: 0,
            laserT: 0, laser: null, lookUp: 0,
-           entered: false, cardT: 0, musicT: 0, musicIdx: 0 };
+           entered: false, cardT: 0, musicT: 0, musicIdx: 0,
+           crownArmed: true };
 }
 function bossSquash() {
   // He no longer folds up at all — Sean cut it, and he was right, a rat bent
@@ -2270,6 +2282,30 @@ function bossVulnerable() {
   if (boss.state === 'hurt' || boss.state === 'cured') return false;
   return boss.state === 'stunned' || boss.headDown > 0 || boss.winded > 0;
 }
+/* The King throws Dex off the moment his crown is struck. It is a shove, not
+   an attack — game.invuln covers the whole flight so neither the pulse nor
+   anything he lands near can zap him. */
+function kingShakeOff() {
+  const T = TUNING.boss;
+  const pc = player.x + player.w / 2;
+  const dir = pc === boss.x ? -1 : Math.sign(pc - boss.x);
+  dropVine(); dropChute();
+  player.flight = false;
+  player.vx = dir * T.crownPulseVx;
+  player.vy = -T.crownPulseVy;
+  player.grounded = false; player.support = null;
+  player.coyote = 0; player.buffer = 0;
+  player.launchT = TUNING.player.padNoCutS;   // the shove is not jump-cuttable
+  player.squash = -0.18;
+  game.invuln = Math.max(game.invuln, T.crownPulseInvulnS);
+  // the pulse itself
+  const cy = boss.floor - TUNING.boss.h * (boss.scale || 1) * 0.5;
+  rings.push({ x: boss.x, y: cy, r: 20, max: 340, life: 0.55, maxLife: 0.55 });
+  rings.push({ x: boss.x, y: cy, r: 10, max: 220, life: 0.4, maxLife: 0.4 });
+  burst(boss.x, cy, '#c6ffb8', 18, 260);
+  addShake(3.0);
+  sfx.shakeOff();
+}
 function bossHurt() {
   const T = TUNING.boss;
   boss.hp--; boss.hurt = T.hurtS; boss.state = 'hurt'; boss.t = 0;
@@ -2281,6 +2317,7 @@ function bossHurt() {
   burst(c.x + c.w / 2, c.y + c.h / 2, '#ffd24d', 26, 260);
   sfx.unlock();
   boss.winded = 0; boss.busy = TUNING.boss.breatherS;
+  kingShakeOff();
   if (boss.hp <= 0) {
     boss.state = 'cured'; boss.t = 0;
     bossSay('My crown! My beautiful — oh. Oh dear.', 5);
@@ -2392,6 +2429,11 @@ function bossCheckHits() {
       novaSay('Topping up your ' + POWERUPS[power.id].name + ' — good luck!', 4);
     }
   }
+  // One crown hit per approach. Touching the floor re-arms it — the crown is
+  // not solid, so bouncing off his head never counts as landing. Without this
+  // the shove alone was not enough: Dex rose, drifted back over the crown and
+  // struck it again on the way down, which is the camping it was meant to end.
+  if (player.grounded) boss.crownArmed = true;
   const pr = { x: player.x, y: player.y, w: player.w, h: player.h };
   const r = bossRect(), crown = bossCrownRect();
   // Coming down on the crown. Always counts, whatever he's doing — and the
@@ -2400,8 +2442,18 @@ function bossCheckHits() {
   const onCrown = { x: crown.x - 16, y: crown.y - 18, w: crown.w + 32, h: crown.h + 30 };
   if (player.vy > 100 && overlap(pr, onCrown)) {
     player.vy = -430;
-    if (boss.hurt <= 0 && boss.state !== 'cured') bossHurt();
-    else { addShake(1.0); sfx.stomp(); }        // already reeling: a free bounce
+    if (boss.crownArmed && boss.hurt <= 0 && boss.state !== 'cured') {
+      boss.crownArmed = false;
+      bossHurt();                                // which shakes him off too
+    } else {
+      // Not a scoring hit — but he is STILL thrown clear. The crown box is
+      // padded wider than the shove first carried him, so without this he
+      // bounced on the King's head for ever, never landing, and therefore
+      // never re-arming: a softlock strictly worse than the camping it
+      // replaced. The King always shrugs him off.
+      addShake(1.0); sfx.stomp();
+      kingShakeOff();
+    }
     return;
   }
   if (game.invuln > 0) return;
