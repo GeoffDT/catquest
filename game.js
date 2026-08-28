@@ -2660,6 +2660,15 @@ function updatePlayerPhysics(dt, solidsOverride = null, maxXOverride = null) {
   player.vy = Math.min(player.vy + (player.flight ? T.catapultGravity : T.gravity) * dt,
                        T.maxFall);
   moveAndCollide(dt, solidsOverride, maxXOverride);
+  // Spring Boots come back the instant he touches down. A double jump you have
+  // to earn back is not a double jump — every platformer a child has played
+  // refreshes it on landing, so one airborne period gets one spring and there
+  // is nothing to ration. The maths recharge still fires, but finds it already
+  // full and hands over bonus crystals instead.
+  if (player.grounded && power.id === 'boots' && power.charges < POWERUPS.boots.max) {
+    power.charges = POWERUPS.boots.max;
+    updateHud();
+  }
   // the arc is over the moment he touches down, or is stopped by a wall
   if (player.flight && (player.grounded || player.vx === 0)) endFlight();
   if (player.flight) {

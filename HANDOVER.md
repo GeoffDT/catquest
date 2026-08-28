@@ -542,6 +542,18 @@ gotcha 24 does not work. **The only reliable cache bust for the page itself is
 a query string:** load `localhost:8471/?cb=something-new`. Always verify a CSS
 change by reading `getComputedStyle`, never by looking at a screenshot.
 
+**34. The boots refresh on landing, and that is deliberate.** They began with
+one charge per level, topped up only by answering a maths question — so a clean
+run gave exactly one double jump, and the only way to earn more was to keep
+dying. Sean: *"do they just work once?!"* One airborne period now gets one
+spring, back the instant he touches down. She cannot chain two in a single
+jump, and she never has to ration it. The maths recharge still fires but finds
+it full and hands over bonus crystals instead, so the teaching loop is intact.
+
+This does not break any level: a double jump raises her reach to 262px but
+horizontal reach is unchanged, so the catapult voids in Crystal Canyon (1,000px+)
+still cannot be jumped and nothing is skippable.
+
 **33. The Spring Boots are a double jump, and "twice as high" is literal.**
 They used to sit on the power-up button and set `vy` to a flat 720 — but an
 ordinary jump already starts at 760, so pressing them early took the charge
