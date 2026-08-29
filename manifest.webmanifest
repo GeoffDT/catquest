@@ -1,6 +1,6 @@
 {
-  "name": "CatQuest — Dex the Cat and the Star Portal",
-  "short_name": "CatQuest",
+  "name": "DexQuest — Dex the Cat and the Star Portal",
+  "short_name": "DexQuest",
   "description": "A maths platformer for young explorers. Cure the Glitch Rats, fly the crystal canyon and rescue Nova.",
   "start_url": "./",
   "scope": "./",

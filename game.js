@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================================
-   CATQUEST — Dex the Cat and the Star Portal
+   DEXQUEST — Dex the Cat and the Star Portal
    ----------------------------------------------------------------------------
    Sections in this file:
      1. Config & TUNING            8. Game state, player, particles
@@ -298,7 +298,7 @@ const LIVES = {
   // whole level again; the life cost is identical either way.
   restartLevelOnDeath: false,
 };
-/* The game is called CatQuest; this key still says numberquest and MUST stay
+/* The game is called DexQuest; this key still says numberquest and MUST stay
    that way. It is the localStorage address of the only copy of a real child's
    progress — every power-up built, every level finished, every spare life.
    Renaming it would not migrate that save, it would silently abandon it and
@@ -738,7 +738,7 @@ if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
 }
 
 /* ---------------------------------------------------------- ZOOM GUARDS --
-   CatQuest is a fixed 16:9 layout with controls pinned to the corners. Any
+   DexQuest is a fixed 16:9 layout with controls pinned to the corners. Any
    page zoom pushes those controls off the screen, and a child has no idea
    what has happened or how to undo it — Sean's daughter lost the jump button
    to exactly this after double-tapping a maths answer.
@@ -6934,9 +6934,9 @@ function introScene5(t) {
     ctx.textAlign = 'center';
     ctx.font = '900 52px "Segoe UI", sans-serif';
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 7;
-    ctx.strokeText('🐱 CatQuest', VIEW_W / 2, 408);
+    ctx.strokeText('🐱 DexQuest', VIEW_W / 2, 408);
     ctx.fillStyle = '#ffce54';
-    ctx.fillText('🐱 CatQuest', VIEW_W / 2, 408);
+    ctx.fillText('🐱 DexQuest', VIEW_W / 2, 408);
     if (Math.sin(game.time * 4) > -0.3) {
       ctx.font = '900 24px "Segoe UI", sans-serif';
       ctx.fillStyle = '#fff';

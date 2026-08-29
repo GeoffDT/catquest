@@ -1,4 +1,4 @@
-# CatQuest — Dex the Cat and the Star Portal
+# DexQuest — Dex the Cat and the Star Portal
 
 > **Continuing work on this?** Read **`HANDOVER.md`** first — it holds the
 > decisions, design rules and already-fixed bugs that this file doesn't.
@@ -41,7 +41,7 @@ Scenes, captions and sound cues are defined in the `INTRO_SCENES` config in
 
 ## Playing on an iPad
 
-CatQuest is built to be played on a tablet, not merely to survive on one:
+DexQuest is built to be played on a tablet, not merely to survive on one:
 
 - **Landscape 16:9**, filling the screen. Held upright it asks for a turn
   rather than serving a squashed strip.
@@ -65,11 +65,16 @@ shapes in that script rather than the PNG.
 ### Add it to her Home Screen
 
 This is the step worth doing. In Safari: **Share → Add to Home Screen**.
-CatQuest then launches **full screen with no Safari chrome** and its own Dex
+DexQuest then launches **full screen with no Safari chrome** and its own Dex
 icon — it behaves like an app rather than a web page. That needs HTTPS, which
 GitHub Pages provides.
 
 ## Publishing it (GitHub Pages)
+
+> The game is **DexQuest**; the repository and the github.io URL are still
+> `catquest`, from before the rename. That is deliberate — they are addresses,
+> not names, and changing them would break the link that is already out there.
+> The custom domain `dexquest.co.uk` is what people will actually see.
 
 The folder is a self-contained static site — no build step, no dependencies.
 It is already a git repository with one commit and **no remote**; it is

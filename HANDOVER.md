@@ -1,4 +1,4 @@
-# CatQuest — working handover
+# DexQuest — working handover
 
 **Purpose of this file.** Code survives a context reset; *intent* doesn't. This
 is the continuation brief: decisions Sean has made, rules that came out of

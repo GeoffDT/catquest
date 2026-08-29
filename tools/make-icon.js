@@ -1,5 +1,5 @@
 /* =============================================================================
-   CatQuest home-screen icon generator.
+   DexQuest home-screen icon generator.
 
        node tools/make-icon.js        →  writes icon-180.png
 
