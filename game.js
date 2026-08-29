@@ -246,7 +246,9 @@ const ui = {
   overlayTitle: $('overlayTitle'),
   overlayMath: $('overlayMath'), overlayPause: $('overlayPause'),
   overlayVictory: $('overlayVictory'),
-  livesChip: $('livesChip'), overlayGameOver: $('overlayGameOver'),
+  livesChip: $('livesChip'), ultraChip: $('ultraChip'),
+  ultraBtn: $('ultraBtn'), ultraSetting: $('ultraSetting'), ultraToggle: $('ultraToggle'),
+  overlayGameOver: $('overlayGameOver'),
   gameOverLives: $('gameOverLives'), gameOverText: $('gameOverText'),
   gameOverRetryBtn: $('gameOverRetryBtn'), gameOverTreehouseBtn: $('gameOverTreehouseBtn'),
   playBtn: $('playBtn'), replayStoryBtn: $('replayStoryBtn'),
@@ -300,6 +302,143 @@ const LIVES = {
    progress — every power-up built, every level finished, every spare life.
    Renaming it would not migrate that save, it would silently abandon it and
    hand her an empty one. A cosmetic rename is never worth a wiped save. */
+/* ------------------------------------------------- ULTRA HARD MODE ------
+   Offered once the game has been finished. It is a TRANSFORM applied to a
+   level after it is built, not a second set of level files — five hand-edited
+   copies would drift apart the first time anyone touched a platform.
+
+   Everything here has to survive checkLevels(), which is run against ultra as
+   well as normal (see the validator's `ultra` argument). Smaller platforms
+   mean wider gaps, and a gap wider than Dex's 131px jump is not "hard", it is
+   broken. The numbers below are the largest the validator would accept.     */
+const ULTRA = {
+  // 35% smaller. checkLevels(true) stays clean down to 0.55, so this has real
+  // margin — but re-run it after ANY level edit: the repair passes below can
+  // only give back width the author drew, not invent a route that never existed.
+  platformScale: 0.65,   // floats and crumblers shrink about their centre
+  minPlatformW: 54,      // …but never below a width he can actually land on
+  cloneRats: true,       // a second rat on every patrol, out of phase
+  cloneSpikeRats: false, // …except spike rats. Sean has cut those three times
+                         // for being unfair; ultra should be harder, not nasty.
+  bossLaserEvery: 0.7,   // King Ratthew fires 1/0.7 = 1.43x as often
+  bossLaserWarn: 0.85,   // and telegraphs it for slightly less time
+};
+// Shrink a platform about its middle: taking it all off one end would drag
+// every gap in the level wider on one side only.
+function ultraShrink(o) {
+  if (o.noShrink) return;                // author says this one carries a tight jump
+  o.ultraX0 = o.x; o.ultraW0 = o.w;      // what the author drew, to restore to
+  const w = Math.max(ULTRA.minPlatformW, Math.round(o.w * ULTRA.platformScale));
+  if (w >= o.w) return;
+  // The LEFT edge stays put. Taking it evenly off both ends widens the gap on
+  // both sides at once, so the repair had to give most of it straight back.
+  // Fixed left edge means the jump ONTO the ledge is unchanged — it lands
+  // where the author intended — and only the run-up off the far end gets
+  // tighter, which is the difficulty we actually want.
+  o.w = w;
+}
+/* Give width back to whichever platforms a shrink has stranded.
+
+   Walks the standable things left to right and, wherever a shrink has opened a
+   gap wider than Dex can cross, grows the two facing edges back out until it
+   fits — never past the width the level author originally chose. The result is
+   an aggressive reduction almost everywhere and a fair one exactly where it
+   matters. */
+const ULTRA_MAX_GAP = 146;               // the validator refuses past 150
+function ultraRestore(o) {
+  if (o.ultraW0 === undefined) return false;
+  if (o.w === o.ultraW0) return false;
+  o.x = o.ultraX0; o.w = o.ultraW0;
+  return true;
+}
+function ultraRepairGaps(L) {
+  const decks = L.solids.concat(L.crumblers)
+    .filter(o => o.kind !== 'ground')
+    .sort((a, b) => a.x - b.x);
+  // things that already bridge a stretch regardless of the platforms
+  const covers = L.solids.filter(o => o.kind === 'ground')
+    .concat(L.movers.map(m => ({ x: m.cx - m.rangeX - m.w / 2,
+                                 w: m.rangeX * 2 + m.w })));
+  const bridged = (a, b) => covers.some(c => c.x <= a && c.x + c.w >= b);
+  for (let pass = 0; pass < 4; pass++) {
+    let fixed = 0;
+    for (let i = 0; i < decks.length - 1; i++) {
+      const A = decks[i], B = decks[i + 1];
+      const gap = B.x - (A.x + A.w);
+      if (gap <= ULTRA_MAX_GAP || bridged(A.x + A.w, B.x)) continue;
+      // put both ends of the gap back exactly as the author drew them
+      if (ultraRestore(A)) fixed++;
+      if (ultraRestore(B)) fixed++;
+    }
+    if (!fixed) break;
+  }
+  ultraRepairReach(L, decks, covers);
+}
+/* The other way a shrink can strand a platform: not a gap along the floor but
+   a climb. Narrowing a ledge pulls its edge away from whatever Dex was meant
+   to jump from, and the next candidate underneath can be further down than he
+   can reach. Same remedy — put the authored geometry back. */
+function ultraRepairReach(L, decks, covers) {
+  const JUMP = TUNING.player.jumpVel ** 2 / (2 * TUNING.player.gravity);
+  const REACH = 180;                     // his horizontal reach in one jump
+  const all = decks.concat(covers.map(c => ({ x: c.x, w: c.w, y: c.y === undefined ? 480 : c.y })))
+                   .concat(L.solids.filter(o => o.kind === 'ground'));
+  for (let pass = 0; pass < 3; pass++) {
+    let fixed = 0;
+    for (const B of decks) {
+      const canReach = all.some(T => T !== B && T.y > B.y && (T.y - B.y) <= JUMP - 6 &&
+                                     T.x + T.w >= B.x - REACH && T.x <= B.x + B.w + REACH);
+      if (!canReach && ultraRestore(B)) fixed++;
+    }
+    if (!fixed) break;
+  }
+}
+function applyUltra(L) {
+  if (L.ultra) return L;                 // never transform the same level twice
+  L.ultra = true;
+  for (const o of L.solids) if (o.kind === 'float') ultraShrink(o);
+  for (const c of L.crumblers) ultraShrink(c);
+  // Movers are deliberately NOT shrunk. A mover's swept range is what bridges
+  // the gap on either side of it, so narrowing one quietly shortens a crossing
+  // that nothing else covers.
+  // A creature patrols a stretch of platform. Narrow the platform and its
+  // patrol now hangs over both ends — the validator calls that "no ground
+  // under it", and in play the rat would walk out into thin air. Pull every
+  // patrol back onto whatever it is actually standing on.
+  const decks = L.solids.concat(L.crumblers);
+  for (const e of L.enemies) {
+    if (e.x1 === undefined || e.x2 === undefined) continue;
+    const mid = (e.x1 + e.x2) / 2;
+    const deck = decks.find(d => Math.abs(d.y - e.y) < 1 && mid >= d.x && mid <= d.x + d.w);
+    if (!deck) continue;
+    const pad = 6;
+    e.x1 = Math.max(e.x1, deck.x + pad);
+    e.x2 = Math.min(e.x2, deck.x + deck.w - pad);
+    if (e.x2 < e.x1) e.x2 = e.x1;
+    e.x = clamp(e.x, e.x1, e.x2);
+  }
+  ultraRepairGaps(L);
+  if (ULTRA.cloneRats) {
+    const extra = [];
+    for (const e of L.enemies) {
+      if (e.type !== 'rat' || e.cured) continue;
+      if (!ULTRA.cloneSpikeRats && e.variant === 'spike') continue;
+      if (e.x1 === undefined || e.x2 === undefined) continue;
+      // Same patrol, so the ground under it is the ground the validator already
+      // approved. Started at the far end so the pair moves out of phase.
+      const c = Object.assign({}, e);
+      c.x = e.x2; c.dir = -1; c.ultraClone = true;
+      extra.push(c);
+    }
+    L.enemies.push(...extra);
+  }
+  return L;
+}
+const ultraOn = () => !!(save && save.ultra);
+// King Ratthew's beams, quicker in ultra
+const bossLaserEvery = () => TUNING.boss.laserEveryS * (ultraOn() ? ULTRA.bossLaserEvery : 1);
+const bossLaserWarn  = () => TUNING.boss.laserWarnS  * (ultraOn() ? ULTRA.bossLaserWarn  : 1);
+
 const SAVE_KEY = 'numberquest_save_v2';
 const LEVEL_COUNT = 5;
 const SAVE_DEFAULTS = {
@@ -314,6 +453,8 @@ const SAVE_DEFAULTS = {
   ratsRescued: 0,              // lifetime creatures cured
   crystalsBank: 0,             // lifetime crystals (banked on level completion)
   completions: 0,              // total adventures finished (any level)
+  ultraUnlocked: false,        // finished the game once, so ultra is on offer
+  ultra: false,                // …and is currently switched on
   lives: 9,                    // spare lives, shared across the whole world
   crystalsToLife: 0,           // crystals collected since the last spare life
 
@@ -1599,8 +1740,12 @@ function buildRatKingSewer() {
   // Three tiers either side, 76–88px apart so every step is an easy jump.
   // The top pair sit level with his crown, which is the only way to come down
   // on it while he is standing up straight.
-  F(10500, 392, 170); F(10740, 316, 190);
-  F(11260, 316, 190); F(11470, 392, 170);
+  // These four are one climb: two low ledges and two high ones, and the route
+  // through depends on all of them keeping their reach. Ultra mode shrinks
+  // platforms everywhere EXCEPT here — narrowing any of them puts the high
+  // ledge out of jump range and checkLevels refuses the level outright.
+  F(10500, 392, 170, { noShrink: true }); F(10740, 316, 190, { noShrink: true });
+  F(11260, 316, 190, { noShrink: true }); F(11470, 392, 170, { noShrink: true });
   SIGN(10260, 320, '👑 King Ratthew the Third!');
   SH(10500, 430); SH(11200, 430); SH(11900, 430);
   C(10580, 352); C(10800, 276); C(10880, 276);
@@ -1646,6 +1791,7 @@ let LEVEL = LEVELS[0].build();
 function loadLevel(i) {
   levelIndex = clamp(i, 0, LEVELS.length - 1);
   LEVEL = LEVELS[levelIndex].build();
+  if (ultraOn()) applyUltra(LEVEL);     // one hook, every level, no copies
   initBoss();
   return LEVEL;
 }
@@ -2150,7 +2296,7 @@ function bossStartLaser() {
   const up = Math.random() < T.roofChance;
   boss.laser = { t: 0, state: 'aim', up, dir: boss.face, from: bossEye(),
                  aim: { x: player.x + player.w / 2, y: player.y + player.h / 2 } };
-  bossSay(up ? 'Bring the ceiling down on him!' : 'Hold STILL, cat!', T.laserWarnS + 0.4);
+  bossSay(up ? 'Bring the ceiling down on him!' : 'Hold STILL, cat!', bossLaserWarn() + 0.4);
   sfx.aim();
 }
 function bossDropRocks() {
@@ -2216,18 +2362,18 @@ function updateBossLaser(dt) {
       boss.laserT = 0; return;
     }
     boss.laserT += dt;
-    if (boss.laserT > T.laserEveryS * bossPace()) { boss.laserT = 0; bossStartLaser(); }
+    if (boss.laserT > bossLaserEvery() * bossPace()) { boss.laserT = 0; bossStartLaser(); }
     return;
   }
   l.t += dt;
   if (l.state === 'aim') {
     l.from = bossEye();
-    if (!l.up && l.t < T.laserWarnS * 0.45) {
+    if (!l.up && l.t < bossLaserWarn() * 0.45) {
       // tracks for the first part of the wind-up, then commits
       l.aim = { x: player.x + player.w / 2, y: player.y + player.h / 2 };
       l.dir = l.aim.x < boss.x ? -1 : 1;
     }
-    if (l.t > T.laserWarnS) { l.state = 'fire'; l.t = 0; sfx.laser(); addShake(1.6);
+    if (l.t > bossLaserWarn()) { l.state = 'fire'; l.t = 0; sfx.laser(); addShake(1.6);
                               if (l.up) bossDropRocks(); }
   } else if (l.t > T.laserFireS) {
     boss.laser = null;
@@ -3619,7 +3765,7 @@ function drawBossFx() {
   if (boss.laser) {
     const T = TUNING.boss, l = boss.laser, e = l.from;
     const charging = l.state === 'aim';
-    const k = charging ? clamp(l.t / T.laserWarnS, 0, 1)
+    const k = charging ? clamp(l.t / bossLaserWarn(), 0, 1)
                        : clamp((T.laserFireS - l.t) / (T.laserFireS * 0.35), 0, 1);
     const end = bossLaserEnd(l);
     const beam = (col, width) => {
@@ -6176,6 +6322,9 @@ function win() {
   const nextIdx = levelIndex + 1;
   victoryNextIndex = (!finale && nextIdx < LEVELS.length &&
                       LEVELS[nextIdx].build && levelUnlocked(nextIdx)) ? nextIdx : null;
+  // Ultra is offered on the card that ends the game, and only when it is not
+  // already running — nothing to offer someone already playing it.
+  if (ui.ultraBtn) ui.ultraBtn.classList.toggle('hidden', !(finale && !save.ultra));
   if (victoryNextIndex === null) {
     ui.replayBtn.classList.add('hidden');       // nothing after this one
   } else {
@@ -6192,6 +6341,7 @@ function win() {
   if (finale) {
     // The last level hands over no power-up — there are only four and they
     // belong to levels one to four. Its reward is the ending.
+    if (!save.ultraUnlocked) { save.ultraUnlocked = true; persist(); }
     setCard('💛 Nova is home. 💛',
             'You solved every puzzle, cured every creature and brought her back. ' +
             'That was all you.');
@@ -7255,6 +7405,10 @@ function toast(msg, secs) {
 }
 function updateHud() {
   // lives are world state, so they show everywhere Dex is actually in the world
+  if (ui.ultraChip) ui.ultraChip.classList.toggle('hidden', !save.ultra ||
+      game.state === 'title' || game.state === 'intro');
+  if (ui.ultraSetting) ui.ultraSetting.classList.toggle('hidden', !save.ultraUnlocked);
+  if (ui.ultraToggle) ui.ultraToggle.checked = !!save.ultra;
   if (ui.livesChip) {
     ui.livesChip.textContent = `🐱 × ${save.lives}`;
     ui.livesChip.classList.toggle('lowLives', save.lives <= 2);
@@ -7357,6 +7511,22 @@ ui.replayBtn.addEventListener('click', () => {
 });
 // guarded: a stale cached page would otherwise throw here and silently strip
 // every listener below this line (mute, pause, resume)
+function setUltra(on) {
+  save.ultra = !!on;
+  persist();
+  if (ui.ultraToggle) ui.ultraToggle.checked = save.ultra;
+  updateHud();
+}
+if (ui.ultraBtn) ui.ultraBtn.addEventListener('click', () => {
+  AudioSys.ensure(); sfx.click();
+  setUltra(true);
+  toast('😼 ULTRA HARD MODE — smaller ledges, more rats, a faster King. Good luck!', 5);
+  enterTreehouse();
+});
+if (ui.ultraToggle) ui.ultraToggle.addEventListener('change', () => {
+  setUltra(ui.ultraToggle.checked);
+  toast(save.ultra ? '😼 Ultra Hard Mode ON' : '🐱 Back to the normal adventure');
+});
 if (ui.gameOverRetryBtn) ui.gameOverRetryBtn.addEventListener('click', () => { AudioSys.ensure(); sfx.click(); restartAdventure(); });
 if (ui.gameOverTreehouseBtn) ui.gameOverTreehouseBtn.addEventListener('click', () => { sfx.click(); enterTreehouse(); });
 ui.pauseRestartBtn.addEventListener('click', () => { sfx.click(); beginAdventure(); });
@@ -7480,11 +7650,11 @@ function catapultSpan() {
   }
   return Math.round(x);
 }
-function checkLevels() {
+function checkLevels(ultra = ultraOn()) {
   const problems = [];
   LEVELS.forEach((entry, li) => {
     if (!entry.build) return;
-    const L = entry.build();
+    const L = ultra ? applyUltra(entry.build()) : entry.build();
     for (const e of L.enemies) {
       const S = CREATURES[e.species];
       if (S.move === 'fly') continue;               // flyers belong in the air
@@ -7872,6 +8042,7 @@ window.NQ = { game, player, TUNING, TREEHOUSE, POWERUPS, CREATURES, LEVELS, THEM
               get bolts() { return bolts; },
               intro, startIntro, skipIntro, advanceIntro,
               persist, resetSave, beginAdventure, enterTreehouse, startOutro, OUTRO_SCENES,
+  ULTRA, applyUltra,
   LIVES, awardCrystals, gameOver, restartAdventure };
 
 /* ---- main loop ---- */

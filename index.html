@@ -226,6 +226,8 @@
     box-shadow: 0 5px 0 #2c7a3e; touch-action: manipulation;
   }
   .bigbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2c7a3e; }
+  .bigbtn.ultra { background: #8c2f9e; box-shadow: 0 5px 0 #5d1d6b; }
+  #ultraChip { background: rgba(140,47,158,.85); }
   .bigbtn.blue { background: #3f7fd6; box-shadow: 0 5px 0 #2b5a9a; }
   .bigbtn.blue:active { box-shadow: 0 2px 0 #2b5a9a; }
   .smallbtn {
@@ -442,6 +444,7 @@
   <!-- HUD -->
   <div id="hud">
     <div id="hudLeft">
+      <span class="chip hidden" id="ultraChip" aria-label="Ultra hard mode">😼 ULTRA</span>
       <span class="chip" id="livesChip" aria-label="Spare lives">🐱 × 9</span>
       <span class="chip" id="healthChip">❤️</span>
       <span class="chip" id="crystalChip">⭐ 0</span>
@@ -527,6 +530,7 @@
       <h2>⚙ Settings</h2>
       <label class="setting"><input type="checkbox" id="muteToggle"> 🔈 Sound off</label>
       <label class="setting"><input type="checkbox" id="fxToggle"> 🍃 Gentle effects</label>
+      <label class="setting hidden" id="ultraSetting"><input type="checkbox" id="ultraToggle"> 😼 Ultra Hard Mode</label>
       <button id="storyBtn" class="bigbtn blue">📖 Watch the story again</button><br>
       <button id="settingsCloseBtn" class="bigbtn">✓ Done</button>
       <div id="resetRow">
@@ -585,6 +589,7 @@
         <div><span>First-try maths</span><b id="statAccuracy">–</b></div>
       </div>
       <button id="replayBtn" class="bigbtn">▶ Continue</button>
+      <button id="ultraBtn" class="bigbtn ultra hidden">😼 Try Ultra Hard Mode</button>
       <button id="victoryTreehouseBtn" class="bigbtn blue">🌳 Back to the Treehouse</button>
     </div>
   </div>

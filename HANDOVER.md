@@ -649,6 +649,34 @@ Lasers went from one attempt every 2.3s to every 1.84s (+25%). `roofChance`
 is untouched, so ceiling shots and aimed shots each got 25% more frequent,
 which is what was asked for.
 
+**39. Ultra Hard Mode is a TRANSFORM, not a second set of levels.** Offered on
+the card that ends the game, remembered in `save.ultra`, applied in one place
+(`loadLevel`) by `applyUltra()`. Five hand-edited copies would have drifted
+apart the first time anyone touched a platform.
+
+`checkLevels()` takes an `ultra` argument and **must be run both ways** —
+`NQ.checkLevels(false)` and `NQ.checkLevels(true)`. The first aggressive
+attempt produced eleven violations: rats patrolling off the ends of platforms
+that had shrunk under them, gaps past a jump, and a mandatory ledge out of
+reach. Smaller platforms are not automatically harder — past a point they are
+impossible.
+
+Three safeguards, in order of importance:
+1. **Patrols are clamped** to whatever the creature is standing on.
+2. **The repair passes restore AUTHORED geometry**, never invented widths. An
+   earlier version grew platforms outward to close gaps and shoved one into a
+   monkey's swing arc — trading a fixed fault for a new one. The authored
+   level already validates, so putting a platform back exactly is the one
+   change guaranteed to introduce nothing.
+3. **`F(x, y, w, { noShrink: true })`** for ledges carrying a tight jump. The
+   sewer climb at 10500/10740/11260/11470 is marked: narrowing any of the four
+   puts the high ledge out of reach.
+
+*Honest limit:* platforms end up about **12% narrower on average**, not the 35%
+the scale asks for, because the levels were already built to the edge of what
+is jumpable and the repair gives most of it back. 34 platforms across the game
+do shrink. The real difficulty comes from the rats, which roughly double.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
