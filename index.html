@@ -227,6 +227,20 @@
   }
   .bigbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2c7a3e; }
   .bigbtn.ultra { background: #8c2f9e; box-shadow: 0 5px 0 #5d1d6b; }
+  #ultraOffer {
+    background: #f4e6fa; border: 3px solid #8c2f9e; border-radius: 14px;
+    padding: 10px 12px; color: #5d1d6b; margin: 8px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    animation: cardPulse .8s ease 3;
+  }
+  #ultraOffer .uoTop {
+    font-weight: 900; font-size: clamp(10px, calc(3 * var(--gvmin)), 21px);
+  }
+  #ultraOffer .uoWhat {
+    font-size: clamp(9px, calc(2.1 * var(--gvmin)), 15px); line-height: 1.35;
+    opacity: .9; max-width: 34em;
+  }
+  #ultraOffer .bigbtn { margin-top: 6px; }
   #ultraChip { background: rgba(140,47,158,.85); }
   .bigbtn.blue { background: #3f7fd6; box-shadow: 0 5px 0 #2b5a9a; }
   .bigbtn.blue:active { box-shadow: 0 2px 0 #2b5a9a; }
@@ -580,6 +594,12 @@
       <h2 id="victoryTitle">🎉 You reached the Star Portal! 🎉</h2>
       <p id="victoryBlurb">Brilliant work, Dex — Nova would be proud! Greenhaven feels brighter already.</p>
       <div id="unlockBanner" class="hidden"></div>
+      <div id="ultraOffer" class="hidden">
+        <span class="uoTop">😼 Ready for a proper challenge?</span>
+        <span class="uoWhat">Ultra Hard Mode: narrower ledges, twice as many rats,
+          and a King Ratthew who barely stops firing.</span>
+        <button id="ultraBtn" class="bigbtn ultra">😼 Play again on Ultra Hard Mode</button>
+      </div>
       <div id="victoryStats">
         <div><span>Time</span><b id="statTime">–</b></div>
         <div><span>Crystals</span><b id="statCrystals">–</b></div>
@@ -589,7 +609,6 @@
         <div><span>First-try maths</span><b id="statAccuracy">–</b></div>
       </div>
       <button id="replayBtn" class="bigbtn">▶ Continue</button>
-      <button id="ultraBtn" class="bigbtn ultra hidden">😼 Try Ultra Hard Mode</button>
       <button id="victoryTreehouseBtn" class="bigbtn blue">🌳 Back to the Treehouse</button>
     </div>
   </div>

@@ -247,7 +247,8 @@ const ui = {
   overlayMath: $('overlayMath'), overlayPause: $('overlayPause'),
   overlayVictory: $('overlayVictory'),
   livesChip: $('livesChip'), ultraChip: $('ultraChip'),
-  ultraBtn: $('ultraBtn'), ultraSetting: $('ultraSetting'), ultraToggle: $('ultraToggle'),
+  ultraBtn: $('ultraBtn'), ultraOffer: $('ultraOffer'),
+  ultraSetting: $('ultraSetting'), ultraToggle: $('ultraToggle'),
   overlayGameOver: $('overlayGameOver'),
   gameOverLives: $('gameOverLives'), gameOverText: $('gameOverText'),
   gameOverRetryBtn: $('gameOverRetryBtn'), gameOverTreehouseBtn: $('gameOverTreehouseBtn'),
@@ -6324,7 +6325,7 @@ function win() {
                       LEVELS[nextIdx].build && levelUnlocked(nextIdx)) ? nextIdx : null;
   // Ultra is offered on the card that ends the game, and only when it is not
   // already running — nothing to offer someone already playing it.
-  if (ui.ultraBtn) ui.ultraBtn.classList.toggle('hidden', !(finale && !save.ultra));
+  if (ui.ultraOffer) ui.ultraOffer.classList.toggle('hidden', !(finale && !save.ultra));
   if (victoryNextIndex === null) {
     ui.replayBtn.classList.add('hidden');       // nothing after this one
   } else {
