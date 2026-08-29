@@ -71,6 +71,18 @@ GitHub Pages provides.
 
 ## Publishing it (GitHub Pages)
 
+## The address
+
+The game lives at **https://dexquest.co.uk**.
+
+That is set by the `CNAME` file in this folder, which GitHub Pages reads. **Do
+not delete it** — removing it drops the custom domain and the site falls back
+to the github.io address, breaking every link anyone has.
+
+DNS at the registrar: four A records on the bare domain pointing at
+`185.199.108.153`, `185.199.109.153`, `185.199.110.153` and `185.199.111.153`,
+plus a CNAME on `www` to `geoffdt.github.io`.
+
 > The game is **DexQuest**; the repository and the github.io URL are still
 > `catquest`, from before the rename. That is deliberate — they are addresses,
 > not names, and changing them would break the link that is already out there.
