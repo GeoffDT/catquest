@@ -271,6 +271,8 @@ const ui = {
   statQuestions: $('statQuestions'), statAccuracy: $('statAccuracy'),
   unlockBanner: $('unlockBanner'),
   overlaySettings: $('overlaySettings'), settingsBtn: $('settingsBtn'),
+  overlayParent: $('overlayParent'), parentBody: $('parentBody'),
+  parentBtn: $('parentBtn'), parentCloseBtn: $('parentCloseBtn'),
   settingsCloseBtn: $('settingsCloseBtn'), storyBtn: $('storyBtn'),
   overlayLevels: $('overlayLevels'), levelList: $('levelList'),
   levelsCloseBtn: $('levelsCloseBtn'),
@@ -437,8 +439,168 @@ function applyUltra(L) {
 }
 const ultraOn = () => !!(save && save.ultra);
 // King Ratthew's beams, quicker in ultra
-const bossLaserEvery = () => TUNING.boss.laserEveryS * (ultraOn() ? ULTRA.bossLaserEvery : 1);
+// (and a little quicker, or slower, with the player's skill — see ADAPT)
+const bossLaserEvery = () => TUNING.boss.laserEveryS * (ultraOn() ? ULTRA.bossLaserEvery : 1) *
+                             (1 - ADAPT.bossLaser * skill());
 const bossLaserWarn  = () => TUNING.boss.laserWarnS  * (ultraOn() ? ULTRA.bossLaserWarn  : 1);
+
+/* ------------------------------------------------- ADAPTIVE DIFFICULTY ---
+   Three things adjust to the player, and all three remember across visits:
+
+   1. GAME SKILL (save.skill, -1..+1). Nudged after every level from how many
+      times Dex was zapped. It speeds up or slows down the creatures and the
+      moving platforms, adds a second rat to some patrols when she is flying,
+      quickens King Ratthew's beams, and moves the point where the in-level
+      helpers step in. It NEVER touches level geometry — gap widths, platform
+      sizes and catapult arcs are what checkLevels() proves possible, and a
+      setting that could break that proof is not a difficulty setting.
+      Rising slime, geysers and lava falls never change either: the flood
+      chase is timed against Dex's own climbing speed, so a faster flood is
+      not harder, it is impossible.
+      Ultra Hard Mode raises the ceiling: the same skill counts for more.
+
+   2. MATHS (save.maths). Per-topic levels; see the MathQuiz comment.
+
+   3. THE QUESTION QUOTA. Questions used to come only from being zapped, so a
+      good run through a level asked nothing at all. Each level now carries
+      puzzle stones that top the count up towards about ten — an aim, not a
+      rule: a stone only asks if she is behind that pace, and once a level has
+      asked fifteen, a zap just sends her back without another one. */
+const ADAPT = {
+  // how a finished level moves the skill score, by zaps in that level
+  winDelta: zaps => zaps === 0 ? 0.25 : zaps <= 2 ? 0.12 : zaps <= 4 ? 0
+                  : zaps <= 7 ? -0.15 : -0.3,
+  gameOverDelta: -0.3,          // running out of lives says "too hard"
+  // creature + mover speed at skill +1, and at skill -1
+  speedUp: 0.25, speedUpUltra: 0.40, speedDown: 0.30,
+  moverShare: 0.5,              // platforms move by half as much as creatures
+  // a second rat on a share of the patrols, once skill is past `from`
+  cloneFrom: 0.4, cloneMax: 0.5, cloneMinPatrol: 160,
+  bossLaser: 0.15,              // beam interval ±15% at the extremes
+  // the in-level helper thresholds (TUNING.assist) shift by one zap either way
+  assistShiftAt: 0.5,
+};
+const QUOTA = {
+  target: 10,                   // roughly how many questions a level should ask
+  ceiling: 15,                  // past this, a zap asks nothing more
+  stones: 10,                   // puzzle stones laid out per level
+  perStone: 2,                  // a stone well behind pace asks up to this many
+  // checkLevels() complains below this: the fewest stones that can still
+  // reach the target on a clean run (target / perStone). Busy levels — the
+  // Sewer is half chute, Glow City half flood — only fit five or six.
+  minStones: 5,
+  stoneCrystals: 2,             // reward for a puzzle stone answer
+  freeCrystals: 1,              // a stone she didn't need to answer
+};
+const MATHS = {
+  topics: ['add', 'sub', 'mul', 'div', 'seq'],
+  names: { add: 'Adding', sub: 'Taking away', mul: 'Times tables',
+           div: 'Sharing (division)', seq: 'Number patterns' },
+  // how often each topic comes up. These are FLOORS: struggling multiplies a
+  // topic up, nothing ever multiplies one down
+  baseWeight: { add: 24, sub: 22, mul: 22, div: 18, seq: 14 },
+  strugglingBoost: 1.6,
+  startTier: 2,                 // = the questions as they were before
+  maxTier: 4,
+  upStreak: 5,                  // right first time, in a row, to step up
+  downMisses: 3,                // misses among the last `window` to step down
+  window: 5,
+  easedFor: 4,                  // questions of extra practice after a step down
+  maxAnswer: 999,
+  tierNames: ['Starting out', 'Building up', 'On track', 'Stretching', 'Flying'],
+};
+function freshMaths() {
+  const topics = {};
+  for (const t of MATHS.topics) {
+    topics[t] = { tier: MATHS.startTier, streak: 0, recent: [], eased: 0, asked: 0, right: 0 };
+  }
+  return { topics, tables: {}, asked: 0, right: 0 };
+}
+const ADAPT_HISTORY = 12;          // levels remembered for the parent view
+// between lo and hi. Deliberately not clamp(): that is a const declared further
+// down the file, and loadSave() runs before it exists — a ReferenceError in
+// here would be caught by loadSave and turned into an EMPTY save.
+const within = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// Whatever is in the save, leave it in a shape everything downstream can
+// trust. A hand-edited or half-written save must never be able to throw
+// inside the maths overlay, which is the one screen a child can't escape.
+function sanitizeAdaptive(s) {
+  const n = Number(s.skill);
+  s.skill = Number.isFinite(n) ? within(n, -1, 1) : 0;
+  const base = freshMaths();
+  const m = (s.maths && typeof s.maths === 'object') ? s.maths : {};
+  for (const t of MATHS.topics) {
+    const d = (m.topics && m.topics[t]) || {};
+    const T = base.topics[t];
+    const tier = Math.floor(Number(d.tier));
+    T.tier = Number.isFinite(tier) ? within(tier, 0, MATHS.maxTier) : MATHS.startTier;
+    for (const k of ['streak', 'eased', 'asked', 'right']) {
+      const v = Math.floor(Number(d[k]));
+      T[k] = Number.isFinite(v) && v > 0 ? v : 0;
+    }
+    T.recent = Array.isArray(d.recent)
+      ? d.recent.slice(-MATHS.window).map(x => x ? 1 : 0) : [];
+  }
+  if (m.tables && typeof m.tables === 'object') {
+    for (const [k, v] of Object.entries(m.tables)) {
+      const t = Math.floor(Number(k));
+      if (!(t >= 1 && t <= 12) || !v) continue;
+      base.tables[String(t)] = { right: Math.max(0, Math.floor(Number(v.right)) || 0),
+                                 wrong: Math.max(0, Math.floor(Number(v.wrong)) || 0) };
+    }
+  }
+  base.asked = Math.max(0, Math.floor(Number(m.asked)) || 0);
+  base.right = Math.max(0, Math.floor(Number(m.right)) || 0);
+  s.maths = base;
+  s.history = Array.isArray(s.history)
+    ? s.history.filter(h => h && typeof h === 'object').slice(-ADAPT_HISTORY) : [];
+  return s;
+}
+// MathQuiz reaches the live record through here, so a save swapped out by
+// "reset all progress" is picked up without MathQuiz holding a stale copy
+function mathsSave() {
+  if (!save.maths || !save.maths.topics) sanitizeAdaptive(save);
+  return save.maths;
+}
+const skill = () => (save && Number.isFinite(save.skill)) ? save.skill : 0;
+// creatures (and, at half strength, moving platforms) — 1 means as authored
+function skillSpeed(mover = false) {
+  const s = skill();
+  let k = s >= 0 ? s * (ultraOn() ? ADAPT.speedUpUltra : ADAPT.speedUp) : s * ADAPT.speedDown;
+  if (mover) k *= ADAPT.moverShare;
+  return 1 + k;
+}
+function adjustSkill(delta) {
+  save.skill = within(skill() + delta, -1, 1);
+}
+function noteLevelResult(extra) {
+  save.history.push(Object.assign({
+    level: levelIndex, ultra: ultraOn(),
+    questions: game.stats.questions, firstTry: game.stats.firstTry,
+    zaps: game.deaths, skill: Math.round(skill() * 100) / 100, at: Date.now(),
+  }, extra));
+  while (save.history.length > ADAPT_HISTORY) save.history.shift();
+}
+// In normal mode, a flying player gets a second rat on some patrols. Ultra
+// already doubles every patrol, so this only ever runs outside it. The choice
+// of WHICH patrols is fixed by position, so a level does not reshuffle itself
+// between one life and the next.
+function addSkillClones(L) {
+  const s = skill();
+  if (ultraOn() || s <= ADAPT.cloneFrom) return;
+  const share = Math.min(ADAPT.cloneMax, (s - ADAPT.cloneFrom) / (1 - ADAPT.cloneFrom) * ADAPT.cloneMax);
+  const extra = [];
+  L.enemies.forEach((e, i) => {
+    if (e.type !== 'rat' || e.variant === 'spike' || e.cured) return;
+    if (e.x1 === undefined || e.x2 === undefined) return;
+    if (e.x2 - e.x1 < ADAPT.cloneMinPatrol) return;
+    if (((e.x1 * 0.6180339) % 1) >= share) return;
+    const c = Object.assign({}, e);
+    c.x = e.x2; c.dir = -1; c.skillClone = true;
+    extra.push(c);
+  });
+  L.enemies.push(...extra);
+}
 
 const SAVE_KEY = 'numberquest_save_v2';
 const LEVEL_COUNT = 5;
@@ -461,8 +623,22 @@ const SAVE_DEFAULTS = {
 
   introSeen: false,            // the opening story cinematic has been watched/skipped
   settings: { muted: false, reducedFx: false },
+  // Adaptive difficulty (see ADAPT). Added WITHOUT bumping v: an iPad still
+  // running yesterday's cached game.js reads a v6 save as unknown and starts
+  // her from nothing. Old code carries unknown fields through untouched.
+  skill: 0,                    // -1 finding it hard .. +1 flying
+  maths: null,                 // per-topic levels; filled by sanitizeAdaptive
+  history: [],                 // the last few levels, for the parent view
 };
-function freshSave() { return JSON.parse(JSON.stringify(SAVE_DEFAULTS)); }
+function freshSave() { return adaptSafe(JSON.parse(JSON.stringify(SAVE_DEFAULTS))); }
+// The adaptive fields are the newest and least trusted part of the save. If
+// tidying them ever throws, reset just them — never let it reach loadSave's
+// catch, which would hand back an empty save and lose everything else.
+function adaptSafe(s) {
+  try { sanitizeAdaptive(s); }
+  catch (_) { s.skill = 0; s.maths = freshMaths(); s.history = []; }
+  return s;
+}
 // lives can never be negative, never absurd, and never a string from a hand-
 // edited save — everything downstream may assume a sane integer
 function clampLives(s) {
@@ -497,7 +673,7 @@ function loadSave() {
       s.built = Object.assign({}, SAVE_DEFAULTS.built, d.built);
       s.settings = Object.assign({}, SAVE_DEFAULTS.settings, d.settings);
       if (s.equipped && !s.built[s.equipped]) s.equipped = null;
-      return fixArrays(clampLives(s));
+      return adaptSafe(fixArrays(clampLives(s)));
     }
     if (d && (d.v === 2 || d.v === 3)) {        // migrate older saves
       const s = freshSave();
@@ -516,7 +692,7 @@ function loadSave() {
         }
       }
       if (d.equipped && s.built[d.equipped]) s.equipped = d.equipped;
-      return fixArrays(s);
+      return adaptSafe(fixArrays(s));
     }
   } catch (_) {}
   return freshSave();
@@ -780,9 +956,26 @@ if (window.visualViewport) {
 }
 
 /* ---------------------------------------------------------- 7. MATHS QUIZ */
+/* ADAPTIVE. Every question belongs to one of five TOPICS — adding, taking
+   away, times tables, sharing (division) and number patterns — and each topic
+   has its own level, 0 to 4, kept in save.maths so it carries across levels,
+   visits and reloads.
+
+     Level 2 is where the game started: the questions exactly as they were
+     before any of this existed, so nobody sees a sudden jump on day one.
+
+   Five right first time in a row moves a topic up a level; three wrong out of
+   the last five moves it down one. Either move wipes the record, so a topic
+   can never see-saw on consecutive questions.
+
+   What it must NEVER do is stop asking about something. Sean's rule: "it
+   should not avoid topics". A struggling topic is asked MORE often, not less,
+   and its hint comes sooner; a strong one keeps its full share and simply gets
+   harder. No topic ever drops below its base weight. */
 const MathQuiz = (() => {
-  const TABLES = [2, 3, 4, 5, 8, 10];
   let used = new Set();
+  let wraps = 0;                        // times every question in reach was used up
+  let forceTier = null;                 // selftest only: pin every topic to one tier
   const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
   const pick = a => a[ri(0, a.length - 1)];
   const shuffle = a => {
@@ -792,118 +985,222 @@ const MathQuiz = (() => {
     return a;
   };
   const tens = n => Math.floor(n / 10) * 10;
+  const MAXA = MATHS.maxAnswer;
 
-  function makeAdd() {
-    const a = ri(11, 84), b = ri(6, Math.min(99 - a, 45));
-    const hint = b >= 10
-      ? `Add the tens first: ${a} + ${tens(b)} = ${a + tens(b)}. Then add ${b % 10} more.`
-      : `Start at ${a} and count up ${b} more.`;
+  /* ---- what each topic level means -------------------------------------
+     Tier 2 is the original game. 0-1 are gentler, 3-4 stretch further. */
+  // times tables in play at each level; a weak table is added back in
+  // wherever it is, so moving up never means leaving a shaky table behind
+  const TABLES = [
+    [2, 5, 10],
+    [2, 3, 4, 5, 10],
+    [2, 3, 4, 5, 8, 10],                // the original set
+    [3, 4, 6, 7, 8, 9],
+    [6, 7, 8, 9, 11, 12],
+  ];
+  const KMAX = [6, 10, 12, 12, 12];     // how far up each table goes
+  const KMIN = [1, 2, 2, 2, 3];
+
+  const M = () => mathsSave();
+  const tierOf = topic => forceTier !== null ? forceTier : M().topics[topic].tier;
+  function tableStats(t) { return M().tables[String(t)]; }
+  function weakTable(t) {
+    const s = tableStats(t);
+    return !!s && s.right + s.wrong >= 2 && s.wrong / (s.right + s.wrong) > 0.4;
+  }
+  // which table to ask about: the tier's set, plus any table still shaky,
+  // with the shaky ones and the never-seen ones asked a bit more
+  function pickTable(tier, from) {
+    const pool = (from || TABLES[tier]).slice();
+    // the selftest measures the levels themselves, not this player's history
+    if (forceTier !== null) return pick(pool);
+    if (!from) for (let t = 2; t <= 12; t++) if (weakTable(t) && !pool.includes(t)) pool.push(t);
+    const w = pool.map(t => 1 + (weakTable(t) ? 2 : 0) + (tableStats(t) ? 0 : 0.5));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < pool.length; i++) if ((r -= w[i]) <= 0) return pool[i];
+    return pool[pool.length - 1];
+  }
+  // a number range per tier: R[tier] = [lo, hi]
+  const span = (R, t) => ri(R[t][0], R[t][1]);
+
+  function addHint(a, b) {
+    if (b < 10) return `Start at ${a} and count up ${b} more.`;
+    if (b % 10 === 0) return `Adding a tens number: the ones digit stays ${a % 10}. Count on in tens from ${a}.`;
+    return `Add the tens first: ${a} + ${tens(b)} = ${a + tens(b)}. Then add ${b % 10} more.`;
+  }
+  function subHint(a, b) {
+    if (b < 10) return `Start at ${a} and count back ${b}.`;
+    if (b % 10 === 0) return `Taking away a tens number: the ones digit stays ${a % 10}. Count back in tens from ${a}.`;
+    return `Take away the tens first: ${a} − ${tens(b)} = ${a - tens(b)}. Then take away ${b % 10}.`;
+  }
+
+  /* ---- adding ---------------------------------------------------------- */
+  function makeAdd(t) {
+    let a, b;
+    if (t === 0) { a = ri(1, 15); b = ri(1, 9); }
+    else if (t === 1) { a = ri(10, 60); b = ri(3, 9); }
+    else if (t === 2) { a = ri(11, 84); b = ri(6, Math.min(99 - a, 45)); }   // original
+    else if (t === 3) { a = ri(25, 99); b = ri(15, 99); }
+    else { a = ri(120, 480); b = ri(25, 250); }
     return { text: `${a} + ${b} = ?`, answer: a + b, key: `add${a}+${b}`,
-             hint, type: 'add', a, b };
+             hint: addHint(a, b), type: 'add', a, b };
   }
-  function makeSub() {
-    const a = ri(20, 99), b = ri(6, a - 4);
-    const hint = b >= 10
-      ? `Take away the tens first: ${a} − ${tens(b)} = ${a - tens(b)}. Then take away ${b % 10}.`
-      : `Start at ${a} and count back ${b}.`;
-    return { text: `${a} − ${b} = ?`, answer: a - b, key: `sub${a}-${b}`,
-             hint, type: 'sub', a, b };
+  function makeMissingAdd(t) {
+    const A = [[1, 10], [5, 40], [5, 60], [20, 120], [100, 400]];
+    const D = [[1, 9], [3, 20], [4, 35], [15, 80], [25, 200]];
+    const a = span(A, t), d = span(D, t);
+    return { text: `${a} + ▢ = ${a + d}`, answer: d, key: `mis${a}+${a + d}`,
+             hint: `What do you add to ${a} to reach ${a + d}? Count up from ${a}.`,
+             type: 'add', a, b: d };
   }
-  function makeMul() {
-    const t = pick(TABLES), k = ri(2, 12);
-    return { text: `${k} × ${t} = ?`, answer: k * t, key: `mul${k}x${t}`,
-             hint: `Count in ${t}s, ${k} times: ${t}, ${t * 2}, ${t * 3}…`,
-             type: 'mul', table: t };
-  }
-  function makeDiv() {
-    const t = pick(TABLES), k = ri(2, 12), m = t * k;
-    return { text: `${m} ÷ ${t} = ?`, answer: k, key: `div${m}/${t}`,
-             hint: `How many ${t}s make ${m}? Count in ${t}s: ${t}, ${t * 2}, ${t * 3}…`,
-             type: 'div', table: t };
-  }
-  function makeMissing() {
-    if (Math.random() < 0.5) {
-      const a = ri(5, 60), d = ri(4, 35);
-      return { text: `${a} + ▢ = ${a + d}`, answer: d, key: `mis${a}+${a + d}`,
-               hint: `What do you add to ${a} to reach ${a + d}? Count up from ${a}.`,
-               type: 'add', a, b: d };
-    }
-    const t = pick(TABLES), k = ri(2, 10);
-    return { text: `▢ × ${t} = ${t * k}`, answer: k, key: `mis${t}x${t * k}`,
-             hint: `Count in ${t}s until you reach ${t * k}: ${t}, ${t * 2}, ${t * 3}…`,
-             type: 'div', table: t };
-  }
-  function makeWord() {
-    const kind = ri(0, 3);
-    if (kind === 0) {
-      const a = ri(10, 55), b = ri(5, 30);
-      return { text: `Dex finds ${a} shiny fish by the river and ${b} more in the pond. How many fish altogether?`,
-               answer: a + b, key: `wadd${a}+${b}`,
-               hint: `This is really ${a} + ${b}. Add the tens first!`,
-               type: 'add', a, b };
-    }
-    if (kind === 1) {
-      const a = ri(14, 60), b = ri(4, a - 4);
-      return { text: `Dex has ${a} balls of yarn. ${b} of them roll away down the hill. How many are left?`,
-               answer: a - b, key: `wsub${a}-${b}`,
-               hint: `This is really ${a} − ${b}. Count back from ${a}.`,
-               type: 'sub', a, b };
-    }
-    if (kind === 2) {
-      const t = pick(TABLES), k = ri(2, 6);
-      return { text: `There are ${k} baskets with ${t} berries in each basket. How many berries in total?`,
-               answer: k * t, key: `wmul${k}x${t}`,
-               hint: `This is really ${k} × ${t}. Count in ${t}s: ${t}, ${t * 2}…`,
-               type: 'mul', table: t };
-    }
-    const t = pick([2, 3, 4, 5]), k = ri(2, 9);
-    return { text: `Dex shares ${t * k} cat treats equally between ${t} kittens. How many treats does each kitten get?`,
-             answer: k, key: `wdiv${t * k}/${t}`,
-             hint: `This is really ${t * k} ÷ ${t}. How many ${t}s make ${t * k}?`,
-             type: 'div', table: t };
+  function makeWordAdd(t) {
+    const A = [[2, 10], [8, 30], [10, 55], [30, 99], [100, 300]];
+    const B = [[1, 9], [3, 15], [5, 30], [20, 80], [50, 200]];
+    const a = span(A, t), b = span(B, t);
+    return { text: `Dex finds ${a} shiny fish by the river and ${b} more in the pond. How many fish altogether?`,
+             answer: a + b, key: `wadd${a}+${b}`,
+             hint: `This is really ${a} + ${b}. ${b >= 10 ? 'Add the tens first!' : `Count up ${b} from ${a}.`}`,
+             type: 'add', a, b };
   }
 
-  function makeSequence() {
-    const roll = Math.random();
-    if (roll < 0.62) {                       // counting up: 1, 4, 7, 10, ▢
-      const step = pick([2, 3, 4, 5, 6, 10]);
-      const start = ri(1, 20);
-      const terms = [0, 1, 2, 3].map(i => start + step * i);
-      const answer = start + step * 4;
-      return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
-               key: `sequp${start}+${step}`,
-               hint: `The numbers go up by ${step} each time. ${terms[3]} + ${step} = ?`,
-               type: 'seq', table: step };
-    }
-    if (roll < 0.87) {                       // counting back: 40, 34, 28, 22, ▢
-      const step = pick([2, 3, 4, 5, 10]);
-      const answer = ri(0, 12);
-      const terms = [4, 3, 2, 1].map(i => answer + step * i);
-      return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
-               key: `seqdn${terms[0]}-${step}`,
-               hint: `The numbers go down by ${step} each time. ${terms[3]} − ${step} = ?`,
-               type: 'seq', table: step };
-    }
-    const start = pick([1, 2, 3, 5]);        // doubling: 3, 6, 12, 24, ▢
+  /* ---- taking away ----------------------------------------------------- */
+  function makeSub(t) {
+    let a, b;
+    if (t === 0) { a = ri(5, 20); b = ri(1, Math.min(9, a - 1)); }
+    else if (t === 1) { a = ri(20, 60); b = ri(3, 9); }
+    else if (t === 2) { a = ri(20, 99); b = ri(6, a - 4); }                  // original
+    else if (t === 3) { a = ri(100, 199); b = ri(15, 99); }
+    else { a = ri(200, 650); b = ri(45, 250); }
+    return { text: `${a} − ${b} = ?`, answer: a - b, key: `sub${a}-${b}`,
+             hint: subHint(a, b), type: 'sub', a, b };
+  }
+  function makeWordSub(t) {
+    const A = [[5, 12], [12, 40], [14, 60], [60, 150], [200, 500]];
+    const a = span(A, t);
+    const b = t === 0 ? ri(1, Math.min(9, a - 1))
+            : t === 1 ? ri(3, 12)
+            : t === 2 ? ri(4, a - 4)
+            : t === 3 ? ri(15, 60) : ri(50, 200);
+    return { text: `Dex has ${a} balls of yarn. ${b} of them roll away down the hill. How many are left?`,
+             answer: a - b, key: `wsub${a}-${b}`,
+             hint: `This is really ${a} − ${b}. ${b >= 10 ? 'Take away the tens first!' : `Count back ${b} from ${a}.`}`,
+             type: 'sub', a, b };
+  }
+
+  /* ---- times tables ---------------------------------------------------- */
+  function makeMul(t) {
+    const n = pickTable(t), k = ri(KMIN[t], KMAX[t]);
+    return { text: `${k} × ${n} = ?`, answer: k * n, key: `mul${k}x${n}`,
+             hint: `Count in ${n}s, ${k} times: ${n}, ${n * 2}, ${n * 3}…`,
+             type: 'mul', table: n };
+  }
+  function makeMissingMul(t) {
+    const n = pickTable(t), k = ri(Math.max(2, KMIN[t]), Math.min(10, KMAX[t]) + (t >= 3 ? 2 : 0));
+    return { text: `▢ × ${n} = ${n * k}`, answer: k, key: `mis${n}x${n * k}`,
+             hint: `Count in ${n}s until you reach ${n * k}: ${n}, ${n * 2}, ${n * 3}…`,
+             type: 'div', table: n };
+  }
+  function makeWordMul(t) {
+    const n = pickTable(t), k = ri(2, [4, 5, 6, 9, 12][t]);
+    return { text: `There are ${k} baskets with ${n} berries in each basket. How many berries in total?`,
+             answer: k * n, key: `wmul${k}x${n}`,
+             hint: `This is really ${k} × ${n}. Count in ${n}s: ${n}, ${n * 2}…`,
+             type: 'mul', table: n };
+  }
+
+  /* ---- sharing (division) ---------------------------------------------- */
+  function makeDiv(t) {
+    const n = pickTable(t), k = ri(Math.max(2, KMIN[t]), KMAX[t]), m = n * k;
+    return { text: `${m} ÷ ${n} = ?`, answer: k, key: `div${m}/${n}`,
+             hint: `How many ${n}s make ${m}? Count in ${n}s: ${n}, ${n * 2}, ${n * 3}…`,
+             type: 'div', table: n };
+  }
+  function makeWordDiv(t) {
+    // the original asked only about 2-5 kittens; higher levels share wider
+    const n = pickTable(t, t <= 2 ? [2, 3, 4, 5] : TABLES[t]);
+    const k = ri(2, [5, 9, 9, 10, 12][t]);
+    return { text: `Dex shares ${n * k} cat treats equally between ${n} kittens. How many treats does each kitten get?`,
+             answer: k, key: `wdiv${n * k}/${n}`,
+             hint: `This is really ${n * k} ÷ ${n}. How many ${n}s make ${n * k}?`,
+             type: 'div', table: n };
+  }
+
+  /* ---- number patterns ------------------------------------------------- */
+  function seqUp(step, start) {
+    const terms = [0, 1, 2, 3].map(i => start + step * i);
+    return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer: start + step * 4,
+             key: `sequp${start}+${step}`,
+             hint: `The numbers go up by ${step} each time. ${terms[3]} + ${step} = ?`,
+             type: 'seq', table: step };
+  }
+  function seqDown(step, answer) {
+    const terms = [4, 3, 2, 1].map(i => answer + step * i);
+    return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
+             key: `seqdn${terms[0]}-${step}`,
+             hint: `The numbers go down by ${step} each time. ${terms[3]} − ${step} = ?`,
+             type: 'seq', table: step };
+  }
+  function seqDouble(start) {
     const terms = [0, 1, 2, 3].map(i => start * Math.pow(2, i));
     return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer: start * 16,
              key: `seqdbl${start}`,
              hint: `Each number is double the one before. Double ${terms[3]} is…?`,
              type: 'seq', table: terms[3] };
   }
+  function seqHalve(answer) {
+    const terms = [16, 8, 4, 2].map(m => answer * m);
+    return { text: `What comes next?  ${terms.join(', ')}, ▢`, answer,
+             key: `seqhalf${answer}`,
+             hint: `Each number is half the one before. Half of ${terms[3]} is…?`,
+             type: 'seq', table: terms[3] };
+  }
+  function makeSequence(t) {
+    const r = Math.random();
+    if (t === 0) return seqUp(pick([1, 2, 5, 10]), ri(0, 10));
+    if (t === 1) return r < 0.75 ? seqUp(pick([2, 3, 5, 10]), ri(1, 15))
+                                 : seqDown(pick([2, 5, 10]), ri(0, 8));
+    if (t === 2) {                                                         // original
+      if (r < 0.62) return seqUp(pick([2, 3, 4, 5, 6, 10]), ri(1, 20));
+      if (r < 0.87) return seqDown(pick([2, 3, 4, 5, 10]), ri(0, 12));
+      return seqDouble(pick([1, 2, 3, 5]));
+    }
+    if (t === 3) {
+      if (r < 0.5) return seqUp(pick([3, 4, 6, 7, 8, 9, 25]), ri(10, 60));
+      if (r < 0.82) return seqDown(pick([3, 4, 6, 7, 8, 9]), ri(0, 30));
+      return seqDouble(pick([3, 4, 5, 6, 10]));
+    }
+    if (r < 0.42) return seqUp(pick([6, 7, 8, 9, 11, 12, 25, 50]), ri(20, 120));
+    if (r < 0.72) return seqDown(pick([6, 7, 8, 9, 11, 12, 25]), ri(0, 60));
+    if (r < 0.86) return seqDouble(pick([3, 5, 6, 7, 10, 12]));
+    return seqHalve(pick([3, 5, 6, 7, 9, 10]));
+  }
 
-  const GENS = [
-    [makeAdd, 20], [makeSub, 18], [makeMul, 18],
-    [makeDiv, 12], [makeMissing, 12], [makeWord, 11],
-    // roughly one question in eight — enough for variety, not enough to
-    // crowd out the tables she is actually meant to be practising
-    [makeSequence, 13],
-  ];
-  const totalW = GENS.reduce((s, g) => s + g[1], 0);
-  function pickGen() {
-    let r = Math.random() * totalW;
-    for (const [fn, w] of GENS) { if ((r -= w) <= 0) return fn; }
-    return makeAdd;
+  /* ---- choosing what to ask -------------------------------------------- */
+  // each topic, and the ways of asking it: [maker, share]
+  const FORMS = {
+    add: [[makeAdd, 70], [makeMissingAdd, 15], [makeWordAdd, 15]],
+    sub: [[makeSub, 80], [makeWordSub, 20]],
+    mul: [[makeMul, 72], [makeWordMul, 28]],
+    div: [[makeDiv, 55], [makeMissingMul, 30], [makeWordDiv, 15]],
+    seq: [[makeSequence, 100]],
+  };
+  function weighted(list) {
+    let r = Math.random() * list.reduce((s, x) => s + x[1], 0);
+    for (const x of list) if ((r -= x[1]) <= 0) return x[0];
+    return list[0][0];
+  }
+  // A topic is "finding it hard" if it has just stepped down, or if half or
+  // more of its recent answers missed. That earns it MORE questions — extra
+  // practice, at the easier level it has dropped to — and an earlier hint.
+  function struggling(topic) {
+    const T = M().topics[topic];
+    if (T.eased > 0) return true;
+    const n = T.recent.length;
+    return n >= 2 && T.recent.filter(x => !x).length * 2 >= n;
+  }
+  function pickTopic() {
+    return weighted(MATHS.topics.map(tp =>
+      [tp, MATHS.baseWeight[tp] * (struggling(tp) ? MATHS.strugglingBoost : 1)]));
   }
 
   function distractors(q) {
@@ -914,10 +1211,11 @@ const MathQuiz = (() => {
     if (q.table) cands.push(q.answer + q.table, q.answer - q.table);
     if (q.type === 'sub' && q.a !== undefined) cands.push(q.a + q.b);
     if (q.type === 'add' && q.a !== undefined) cands.push(Math.abs(q.a - q.b));
+    if (q.answer >= 100) cands.push(q.answer + 100, q.answer - 100);
     shuffle(cands);
     for (const c of cands) {
       if (out.length >= 3) break;
-      if (Number.isInteger(c) && c >= 0 && c <= 200 && !seen.has(c)) {
+      if (Number.isInteger(c) && c >= 0 && c <= MAXA && !seen.has(c)) {
         seen.add(c); out.push(c);
       }
     }
@@ -930,35 +1228,110 @@ const MathQuiz = (() => {
     return out;
   }
 
-  function next() {
-    for (let i = 0; i < 120; i++) {
-      const q = pickGen()();
-      if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer > 200) continue;
+  function next(topicOverride) {
+    for (let i = 0; i < 160; i++) {
+      const topic = topicOverride || pickTopic();
+      const tier = tierOf(topic);
+      const q = weighted(FORMS[topic])(tier);
+      if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer > MAXA) continue;
       if (used.has(q.key)) continue;
       const choices = shuffle([q.answer, ...distractors(q)]);
       if (new Set(choices).size !== 4) continue;
       used.add(q.key);
-      return { ...q, choices };
+      // scaffold: the hint is offered after one miss rather than two, and
+      // straight away if this topic is already at its gentlest and still hard
+      const scaffold = forceTier === null && struggling(topic);
+      return { ...q, topic, tier, choices, scaffold,
+               hintFirst: scaffold && tier === 0 };
     }
-    used.clear();
-    return next();
+    // everything in reach has been asked: start the round again. Only really
+    // possible at the gentlest times-table level, which has 27 questions.
+    used.clear(); wraps++;
+    return next(topicOverride);
+  }
+
+  /* ---- learning from the answer ----------------------------------------
+     Called once per question: `right` means right FIRST time. A question that
+     took two goes counts as a miss here — it still earns its reward in the
+     game, but it is evidence the topic is not secure yet. Returns +1/-1 if
+     the topic changed level, 0 otherwise. */
+  function record(q, right) {
+    if (!q || !q.topic || q.recorded || forceTier !== null) return 0;
+    q.recorded = true;
+    const S = M();
+    const T = S.topics[q.topic];
+    T.asked++; if (right) T.right++;
+    if (T.eased > 0) T.eased--;
+    T.recent.push(right ? 1 : 0);
+    while (T.recent.length > MATHS.window) T.recent.shift();
+    T.streak = right ? T.streak + 1 : 0;
+    let moved = 0;
+    if (T.streak >= MATHS.upStreak && T.tier < MATHS.maxTier) moved = 1;
+    else if (T.recent.filter(x => !x).length >= MATHS.downMisses && T.tier > 0) moved = -1;
+    if (moved) {
+      T.tier += moved; T.streak = 0; T.recent = [];
+      if (moved < 0) T.eased = MATHS.easedFor;
+    }
+    if (q.table && (q.topic === 'mul' || q.topic === 'div')) {
+      const k = String(q.table);
+      const ts = S.tables[k] || (S.tables[k] = { right: 0, wrong: 0 });
+      if (right) ts.right++; else ts.wrong++;
+    }
+    S.asked++; if (right) S.right++;
+    persist();
+    return moved;
   }
 
   function reset() { used.clear(); }
+  // Checks every topic at every level: well-formed choices, answers in range,
+  // a hint on everything — and that the levels really do get harder, measured
+  // by the size of the answers, so a typo in a range table cannot quietly
+  // make level 4 easier than level 3.
   function selftest(n = 300) {
-    const savedSet = used; used = new Set();
-    const issues = [], keys = new Set();
-    for (let i = 0; i < n; i++) {
-      const q = next();
-      if (keys.has(q.key)) issues.push(`duplicate question: ${q.key}`);
-      keys.add(q.key);
-      if (new Set(q.choices).size !== 4) issues.push(`duplicate choices: ${q.text}`);
-      if (!q.choices.includes(q.answer)) issues.push(`answer missing: ${q.text}`);
-      if (q.choices.some(c => c < 0)) issues.push(`negative choice: ${q.text}`);
-      if (!q.hint) issues.push(`no hint: ${q.text}`);
+    const savedSet = used;
+    const issues = [];
+    // at least 400 per topic per level: the "is each level harder" check
+    // compares averages, and at 20 samples they were too noisy to trust
+    const per = Math.max(400, Math.round(n / (MATHS.topics.length * (MATHS.maxTier + 1))));
+    const mean = {};
+    try {
+      for (let tier = 0; tier <= MATHS.maxTier; tier++) {
+        forceTier = tier;
+        for (const topic of MATHS.topics) {
+          used = new Set();
+          const keys = new Set();
+          let sum = 0;
+          for (let i = 0; i < per; i++) {
+            const w = wraps;
+            const q = next(topic);
+            if (wraps !== w) keys.clear();      // pool used up: repeats are legitimate now
+            if (keys.has(q.key)) issues.push(`duplicate question: ${q.key}`);
+            keys.add(q.key);
+            if (q.topic !== topic) issues.push(`wrong topic ${q.topic} for ${topic}`);
+            if (new Set(q.choices).size !== 4) issues.push(`duplicate choices: ${q.text}`);
+            if (!q.choices.includes(q.answer)) issues.push(`answer missing: ${q.text}`);
+            if (q.choices.some(c => c < 0 || c > MAXA)) issues.push(`choice out of range: ${q.text}`);
+            if (!q.hint) issues.push(`no hint: ${q.text}`);
+            // the size of the numbers she has to handle — the biggest one
+            // on screen, which for "48 ÷ 6" is the 48, not the answer 8
+            sum += topic === 'add' ? q.a + q.b
+                 : topic === 'sub' ? q.a
+                 : topic === 'div' ? q.table * q.answer
+                 : topic === 'seq' ? Math.max(q.answer, ...q.text.match(/\d+/g).map(Number))
+                 : q.answer;
+          }
+          (mean[topic] = mean[topic] || [])[tier] = sum / per;
+        }
+      }
+    } finally { forceTier = null; used = savedSet; }
+    for (const topic of MATHS.topics) {
+      const m = mean[topic];
+      for (let t = 1; t < m.length; t++) {
+        if (m[t] < m[t - 1] * 0.9) issues.push(`${topic}: level ${t} looks easier than level ${t - 1} (${m[t - 1].toFixed(1)} → ${m[t].toFixed(1)})`);
+      }
     }
-    used = savedSet;
-    return { tested: n, issues };
+    return { tested: per * MATHS.topics.length * (MATHS.maxTier + 1), issues,
+             meanAnswer: Object.fromEntries(Object.entries(mean).map(([k, v]) => [k, v.map(x => Math.round(x))])) };
   }
   // The lock on Nova's cage. Sean asked for the last question to be harder
   // than the rest, so it is the only two-step one in the game: a times table
@@ -986,7 +1359,7 @@ const MathQuiz = (() => {
     }
     return next();
   }
-  return { next, finale, reset, selftest };
+  return { next, finale, reset, selftest, record, struggling, TABLES };
 })();
 
 /* ----------------------------------------------------- CREATURE REGISTRY --
@@ -1793,6 +2166,8 @@ function loadLevel(i) {
   levelIndex = clamp(i, 0, LEVELS.length - 1);
   LEVEL = LEVELS[levelIndex].build();
   if (ultraOn()) applyUltra(LEVEL);     // one hook, every level, no copies
+  else addSkillClones(LEVEL);           // a flying player meets a few more rats
+  LEVEL.stones = placeStones(LEVEL);    // after both: they avoid the patrols
   initBoss();
   return LEVEL;
 }
@@ -1836,7 +2211,7 @@ let boss = null, bossWaves = [], bossRocks = [];
 let slowT = 0;                 // Time Bubble seconds remaining
 let rings = [];                // cure-pulse ripples
 let bolts = [];                // electric bolts fired by Glitch Monkeys
-let mathContext = 'zap';       // 'zap' (respawn) | 'build' (treehouse workshop)
+let mathContext = 'zap';       // 'zap' (respawn) | 'stone' (puzzle stone) | 'cage' | 'build' (workshop)
 let buildTarget = null;        // power-up id being built in the workshop
 let roomT = 0;                 // treehouse animation clock
 let thRatsDeco = [];           // rescued rats wandering the treehouse floor
@@ -1903,9 +2278,12 @@ function protectionTime() {
   return (game.assistLevel >= 2 ? A.level2SpawnProtectionMs
                                 : TUNING.player.spawnProtectionMs) / 1000;
 }
-function speedMult(x) {
+// The one dial for how fast the world's creatures (and moving platforms) go.
+// `mover` = a moving platform, which follows the player's skill at half
+// strength: a platform that outruns her is a gap, not a challenge.
+function speedMult(x, mover = false) {
   const A = TUNING.assist;
-  let m = 1;
+  let m = skillSpeed(mover);
   if (game.assistLevel === 1) m *= A.level1SpeedMult;
   if (game.assistLevel >= 2) m *= A.level2SpeedMult;
   if (game.localZone && Math.abs(x - game.localZone.x) < A.localRadius) m *= A.localSpeedMult;
@@ -2046,6 +2424,10 @@ function popLives() {
    finished levels) is untouched — only the spare lives are spent. */
 function gameOver() {
   if (game.state === 'gameover') return;
+  // running out of lives is the clearest "this is too hard" there is
+  adjustSkill(ADAPT.gameOverDelta);
+  noteLevelResult({ won: false });
+  persist();
   // if the overlay isn't in the page at all, do the kind thing rather than
   // stranding a child in a state with no way out
   if (!ui.overlayGameOver) {
@@ -2179,6 +2561,7 @@ function update(dt) {
   updatePlayerPhysics(dt);
   updateCrumblers(wdt);
   updatePads(dt);
+  updateStones(dt);
   updateEnemies(wdt);
   checkHazards();
   checkPickupsAndGoals();
@@ -2201,7 +2584,7 @@ function update(dt) {
 function updateMovers(dt) {
   const sf = slowFactor();
   for (const m of LEVEL.movers) {
-    m.angle += m.omega * speedMult(m.cx) * sf * dt;
+    m.angle += m.omega * speedMult(m.cx, true) * sf * dt;
     const nx = m.cx + Math.sin(m.angle) * m.rangeX - m.w / 2;
     const ny = m.cy + Math.sin(m.angle) * m.rangeY;
     m.dx = nx - m.x; m.dy = ny - m.y;
@@ -4564,6 +4947,7 @@ function render() {
   drawPortal();
   drawCrystals();
   drawCaches();
+  drawStones();
   drawCage();
   drawKing();
   drawBossFx();
@@ -4721,6 +5105,157 @@ function updatePads(dt) {
     // launchT doubles as the re-trigger guard: while it runs Dex is already on
     // his way up, so overlapping the same geode cannot fire it twice
     if (!player.flight && player.launchT <= 0 && overlap(player, pad)) bouncePad(pad);
+  }
+}
+/* ---------------------------------------------------------- PUZZLE STONES --
+   Sean wanted roughly ten questions in every level. Before these, the only
+   questions inside a level came from being zapped — so the better she played,
+   the less maths she did, and a clean run asked nothing at all.
+
+   Each level gets about ten stones, laid out evenly along the route by
+   placeStones() rather than by hand: five levels of hand-placed stones would
+   need re-placing every time a platform moved, and a stone dropped in the
+   wrong spot (on a rat's patrol, in a flood) is a trap. The placer refuses
+   anywhere near a hazard and simply skips a stretch it can't fit one in.
+
+   A stone only ASKS if she is behind pace — stone 4 of 10 asks only if the
+   level has asked fewer than 4 questions so far, whatever their source. Ahead
+   of pace (a few zaps will do that), it hands over a crystal instead. So a
+   clean run gets about ten from the stones and a bumpy one gets about ten
+   mostly from zaps, which is the "aim, not a rule" Sean asked for. */
+function placeStones(L) {
+  const cps = L.checkpoints || [];
+  if (!cps.length || !L.portal) return [];
+  const from = cps[0].x + 500;
+  let to = L.portal.x - 260;
+  // never inside the boss arena: a puzzle mid-fight would be a free pause
+  if (L.boss) to = Math.min(to, cps[cps.length - 1].x - 240);
+  if (to - from < 1000) return [];
+  const surfaces = L.solids.filter(o => (o.kind === 'ground' || o.kind === 'float') && o.w >= 90);
+  const near = (x, a, b, pad) => x >= a - pad && x <= b + pad;
+  const sweep = m => ({ x: m.cx - m.rangeX - m.w / 2, y: m.cy - m.rangeY,
+                        w: m.rangeX * 2 + m.w, h: m.rangeY * 2 + m.h });
+  // The stone never asks mid-air (see updateStones), so it does not need to
+  // be far from danger — only not ON it, and not where it would be confusing:
+  // in a geode's trigger, in a rat's path, under a monkey's vine.
+  function clear(x, S) {
+    if (x - 26 < S.x + 10 || x + 26 > S.x + S.w - 10) return false;
+    if (L.spikes.some(o => near(x, o.x, o.x + o.w, 40))) return false;
+    if ((L.slimes || []).some(o => near(x, o.x, o.x + o.w, 40))) return false;
+    if ((L.geysers || []).some(o => near(x, o.x, o.x + o.w, 70))) return false;
+    if ((L.falls || []).some(o => near(x, o.x, o.x + TUNING.enemies.fallWidth, 80))) return false;
+    // a rising flood is a chase — no pausing halfway up it
+    if ((L.floods || []).some(o => near(x, o.x1, o.x2, 60))) return false;
+    if ((L.chutes || []).some(o => near(x, o.x1, o.x2, 120))) return false;
+    if ((L.pads || []).some(o => near(x, o.x, o.x + o.w, 90))) return false;
+    if ((L.vines || []).some(o => near(x, o.ax, o.ax, 120))) return false;
+    if (cps.some(c => Math.abs(c.x - x) < 60)) return false;
+    if ((L.signs || []).some(o => Math.abs(o.x - x) < 50)) return false;
+    if ((L.caches || []).some(o => Math.abs(o.x - x) < 50)) return false;
+    for (const e of L.enemies) {
+      if (e.type === 'rat') {
+        // a rat on this deck walking through the stone
+        if (Math.abs(e.y - S.y) < 2 && near(x, e.x1, e.x2, 30)) return false;
+      } else if (e.type === 'mozzie') {
+        if (Math.abs(e.x - x) < 90) return false;
+      } else if (e.type === 'monkey') {
+        if (Math.abs(e.ax - x) < 150) return false;
+      }
+    }
+    // room to stand: nothing solid where the stone would be, nothing sweeping
+    // through it
+    const box = { x: x - 20, y: S.y - 64, w: 40, h: 62 };
+    if (L.solids.concat(L.crumblers).some(o => o !== S && overlap(box, o))) return false;
+    if (L.movers.some(m => overlap(box, sweep(m)))) return false;
+    if (L.helper && overlap(box, L.helper)) return false;
+    return true;
+  }
+  const out = [];
+  const N = QUOTA.stones;
+  for (let i = 0; i < N; i++) {
+    const mark = from + (to - from) * (i + 0.5) / N;
+    let best = null;
+    // search outward from the mark; the ground is preferred over a ledge,
+    // because the ground is the route and a ledge may be a detour
+    for (let d = 0; d <= 900 && !best; d += 20) {
+      for (const x of d ? [mark + d, mark - d] : [mark]) {
+        if (x < from || x > to) continue;
+        if (out.some(o => Math.abs(o.x - x) < 320)) continue;
+        const under = surfaces.filter(S => x >= S.x && x <= S.x + S.w)
+                              .sort((a, b) => (a.kind === 'ground' ? 0 : 1) - (b.kind === 'ground' ? 0 : 1) || b.y - a.y);
+        const S = under.find(S => clear(x, S));
+        if (S) { best = { x: Math.round(x), y: S.y, used: false, glow: 0 }; break; }
+      }
+    }
+    if (best) out.push(best);
+  }
+  return out.sort((a, b) => a.x - b.x);
+}
+// the trigger: a column above the stone, tall enough that jumping over it
+// still counts, but not so tall that flying high over it does
+const stoneBox = st => ({ x: st.x - 24, y: st.y - 180, w: 48, h: 180 });
+function updateStones(dt) {
+  if (game.state !== 'playing') return;
+  const stones = LEVEL.stones || [];
+  // Touching a stone only ARMS it. The question waits until Dex is standing on
+  // something solid and not on the move through the air — so it can never
+  // freeze him halfway over a spike pit, then drop him back into the jump.
+  const settled = player.grounded && !player.flight && !player.sliding && !player.vine;
+  for (let i = 0; i < stones.length; i++) {
+    const st = stones[i];
+    if (st.glow > 0) st.glow = Math.max(0, st.glow - dt * 1.5);
+    if (st.used) continue;
+    if (!st.armed && overlap(player, stoneBox(st)) &&
+        !player.flight && !player.sliding && !player.vine) st.armed = true;
+    if (!st.armed || !settled) continue;
+    // A zap while armed throws back to a checkpoint; if that is behind the
+    // stone, leave it for her to walk up to again rather than asking at the
+    // checkpoint for a stone she can't see.
+    if (Math.abs(player.x + player.w / 2 - st.x) > 420) { st.armed = false; continue; }
+    st.used = true; st.armed = false; st.glow = 1;
+    // pace so far: stone i of N should find about i+1 questions already
+    // asked (scaled to the target), from any source
+    const pace = Math.round(QUOTA.target * (i + 1) / stones.length);
+    const behind = Math.min(pace, QUOTA.ceiling) - game.stats.questions;
+    if (behind > 0) {
+      // a level with fewer stones (or a stone she reached after a long clean
+      // stretch) can ask two in a row to catch up — never more
+      st.left = Math.min(QUOTA.perStone, behind);
+      showStoneMath(st);
+    } else {
+      awardCrystals(QUOTA.freeCrystals);
+      burst(st.x, st.y - 30, '#7de3ff', 12, 160);
+      sfx.collect();
+      toast(`🧩 You've solved lots already — here's a free crystal! ⭐`);
+    }
+    return;
+  }
+}
+function drawStones() {
+  for (const st of (LEVEL.stones || [])) {
+    if (st.x < camX - 60 || st.x > camX + VIEW_W + 60) continue;
+    const x = st.x, y = st.y;
+    ctx.save();
+    if (!st.used || st.glow > 0) {
+      const a = st.used ? st.glow : 0.22 + Math.sin(game.time * 3 + x) * 0.08;
+      ctx.fillStyle = `rgba(125,227,255,${a.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y - 30, 30 + (st.used ? (1 - st.glow) * 30 : 0), 0, 7); ctx.fill();
+    }
+    // a standing stone
+    ctx.fillStyle = st.used ? '#8c8aa0' : '#7d7a99';
+    roundRect(x - 17, y - 50, 34, 50, 12); ctx.fill();
+    ctx.fillStyle = st.used ? '#a6a4b8' : '#9c99bb';
+    roundRect(x - 14, y - 48, 28, 10, 6); ctx.fill();
+    ctx.fillStyle = '#5c5975';
+    ctx.fillRect(x - 19, y - 6, 38, 6);
+    // the rune: a "?" waiting, a tick once it's done
+    const bob = st.used ? 0 : Math.sin(game.time * 2.4 + x * 0.01) * 2;
+    ctx.font = '900 24px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (!st.used) { ctx.shadowColor = '#7de3ff'; ctx.shadowBlur = 10; }
+    ctx.fillStyle = st.used ? 'rgba(255,255,255,0.55)' : '#bdf3ff';
+    ctx.fillText(st.used ? '✓' : '?', x, y - 22 + bob);
+    ctx.restore();
   }
 }
 function drawPlatforms() {
@@ -5466,7 +6001,11 @@ function die(cause) {
   input.left = input.right = input.jump = input.jumpPressed = false;
 
   const A = TUNING.assist;
-  const lvl = game.deaths >= A.level2Deaths ? 2 : game.deaths >= A.level1Deaths ? 1 : 0;
+  // a player who usually finds it hard gets the helpers one zap sooner, and
+  // one who usually flies gets them one zap later
+  const shift = skill() <= -ADAPT.assistShiftAt ? -1 : skill() >= ADAPT.assistShiftAt ? 1 : 0;
+  const lvl = game.deaths >= A.level2Deaths + shift ? 2
+            : game.deaths >= A.level1Deaths + shift ? 1 : 0;
   if (lvl !== game.assistLevel) {
     game.assistLevel = lvl;
     if (lvl === 1) toast('A friendly breeze slows the hazards a little… 🍃');
@@ -5487,7 +6026,11 @@ function updateDying(dt) {
   if (game.deathTimer <= 0) {
     // no spares left: straight to the game over screen, no maths question for
     // a run that has already ended
-    if (game.livesLeft === false) gameOver(); else showMath();
+    if (game.livesLeft === false) gameOver();
+    // Enough maths for one level: past the ceiling a zap just sends her back.
+    // Fifteen questions in a level is already a lot of being stuck.
+    else if (game.stats.questions >= QUOTA.ceiling) { returnToCheckpoint(); toast('💪 Back you go, Dex!'); }
+    else showMath();
   }
 }
 function openMathOverlay() {
@@ -5499,12 +6042,47 @@ function openMathOverlay() {
   ui.mathReward.textContent = '';
   ui.mathHint.classList.add('hidden');
   ui.mathHint.textContent = '';
+  // a topic she is finding hard, already at its gentlest: show the way in
+  // before she has to get it wrong
+  if (currentQ.hintFirst) {
+    ui.mathHint.textContent = '💡 Tip: ' + currentQ.hint;
+    ui.mathHint.classList.remove('hidden');
+  }
   ui.answers.forEach((b, i) => {
     b.innerHTML = `${currentQ.choices[i]}<span class="keyhint">press ${i + 1}</span>`;
     b.classList.remove('correct', 'faded', 'shake');
   });
   ui.overlayMath.classList.remove('hidden');
   ui.answers[0].focus();
+}
+let stoneNow = null;           // the puzzle stone currently asking
+function showStoneMath(st) {             // a puzzle stone on the route
+  game.state = 'math';
+  mathContext = 'stone';
+  stoneNow = st;
+  game.stats.questions++;
+  input.jump = input.jumpPressed = false;     // no jump queued up behind the overlay
+  ui.mathTitle.textContent = st.left > 1 ? '🧩 Puzzle Stone — a double puzzle!' : '🧩 Puzzle Stone!';
+  ui.mathSub.textContent = `Solve it for ${QUOTA.stoneCrystals} bonus crystals, Dex!`;
+  sfx.click();
+  openMathOverlay();
+}
+function nextStoneQuestion() {
+  if (game.state !== 'math' || mathContext !== 'stone' || !stoneNow) return;
+  game.stats.questions++;
+  ui.mathTitle.textContent = '🧩 Puzzle Stone — part 2!';
+  ui.mathSub.textContent = `One more for another ${QUOTA.stoneCrystals} crystals!`;
+  openMathOverlay();
+}
+function resumeFromStone() {
+  if (game.state !== 'math' || mathContext !== 'stone') return;
+  ui.overlayMath.classList.add('hidden');
+  currentQ = null; mathContext = 'zap'; stoneNow = null;
+  // a beat of safety so a creature that was closing in can't land the very
+  // frame play resumes
+  game.invuln = Math.max(game.invuln, 0.8);
+  game.state = 'playing';
+  updateHud();
 }
 function showMath() {                    // after a zap in the level
   game.state = 'math';
@@ -5559,6 +6137,22 @@ function pressAnswer(i) {
     answerLocked = true;
     btn.classList.add('correct');
     ui.mathFeedback.textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+    const firstTry = attemptsThisQ === 0;
+    const moved = MathQuiz.record(currentQ, firstTry);
+    // in-level questions count towards the level's accuracy, whatever asked them
+    if (firstTry && mathContext !== 'build') game.stats.firstTry++;
+    if (moved > 0 && mathContext !== 'cage') {
+      ui.mathFeedback.textContent += ` — ${MATHS.names[currentQ.topic]} levelled up! 🚀`;
+    }
+    if (mathContext === 'stone') {
+      awardCrystals(QUOTA.stoneCrystals);
+      const more = stoneNow && --stoneNow.left > 0 && game.stats.questions < QUOTA.ceiling;
+      ui.mathReward.textContent = `🧩 +${QUOTA.stoneCrystals} crystals!` + (more ? ' Here comes part 2…' : ' On you go, Dex!');
+      ui.mathReward.classList.remove('hidden');
+      sfx.correct();
+      setTimeout(more ? nextStoneQuestion : resumeFromStone, 1200);
+      return;
+    }
     if (mathContext === 'cage') {
       ui.mathReward.textContent = '🔓 Click! The cage swings open — Nova is free!';
       ui.mathReward.classList.remove('hidden');
@@ -5575,7 +6169,6 @@ function pressAnswer(i) {
       setTimeout(finishBuild, 1400);
       return;
     }
-    if (attemptsThisQ === 0) game.stats.firstTry++;
     // power restored: recharge the equipped power-up (or give a bonus instead)
     const def = power.id ? POWERUPS[power.id] : null;
     let reward;
@@ -5595,11 +6188,14 @@ function pressAnswer(i) {
     setTimeout(respawn, 1400);
   } else {
     attemptsThisQ++;
-    if (mathContext === 'zap') game.stats.wrongAttempts++;
+    if (attemptsThisQ === 1) MathQuiz.record(currentQ, false);
+    if (mathContext !== 'build') game.stats.wrongAttempts++;
     btn.classList.add('faded');
     btn.classList.remove('shake'); void btn.offsetWidth; btn.classList.add('shake');
     ui.mathFeedback.textContent = ENCOURAGE[Math.floor(Math.random() * ENCOURAGE.length)];
-    if (attemptsThisQ >= (mathContext === 'cage' ? 1 : 2)) {
+    // the hint comes after two misses — or one, at the cage, or on a topic
+    // she has been finding hard
+    if (attemptsThisQ >= (mathContext === 'cage' || currentQ.scaffold ? 1 : 2)) {
       ui.mathHint.textContent = (mathContext === 'cage' ? '💡 Nova: ' : '💡 Hint: ') + currentQ.hint;
       ui.mathHint.classList.remove('hidden');
     }
@@ -5610,6 +6206,10 @@ function respawn() {
   if (game.state !== 'math' || mathContext !== 'zap') return;
   ui.overlayMath.classList.add('hidden');
   currentQ = null;
+  returnToCheckpoint();
+}
+// back to the last checkpoint after a zap, with or without a question first
+function returnToCheckpoint() {
   bolts = [];
   if (save.lives <= 0) { gameOver(); return; }          // belt and braces
   if (LIVES.restartLevelOnDeath) {                      // a life costs the whole level
@@ -6305,6 +6905,10 @@ function win() {
   const reward = POWERUP_ORDER[levelIndex];
   const earned = (firstClear && reward && !save.blueprints[reward]) ? reward : null;
   if (earned) { save.blueprints[earned] = true; sfx.unlock(); }
+  // the game's sense of how she's doing: a clean run nudges it up, a level
+  // full of zaps nudges it down. Takes effect from the next level loaded.
+  adjustSkill(ADAPT.winDelta(game.deaths));
+  noteLevelResult({ won: true });
   persist();
 
   const mins = Math.floor(game.time / 60), secs = Math.floor(game.time % 60);
@@ -7572,6 +8176,84 @@ ui.levelsCloseBtn.addEventListener('click', () => {
   sfx.click();
   ui.overlayLevels.classList.add('hidden');
 });
+/* ------------------------------------------------------------ PARENT VIEW --
+   Read-only: what the adaptive maths and difficulty currently believe, in
+   words a parent can act on. Nothing on this screen can change the save. */
+function skillLabel(s) {
+  return s <= -0.6 ? 'Much gentler' : s <= -0.2 ? 'A bit gentler'
+       : s < 0.2 ? 'Normal' : s < 0.6 ? 'A bit harder' : 'Much harder';
+}
+const escHtml = t => String(t).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function openParentView() {
+  if (!ui.overlayParent || !ui.parentBody) return;
+  const M = mathsSave();
+  const num = v => Math.max(0, Math.floor(Number(v)) || 0);
+  let h = '<h3>Maths topics</h3><table class="pvTable"><tr><th>Topic</th><th>Level</th><th>Lately</th></tr>';
+  for (const t of MATHS.topics) {
+    const T = M.topics[t];
+    const dots = Array.from({ length: MATHS.maxTier + 1 },
+      (_, i) => `<span class="${i <= T.tier ? 'on' : ''}"></span>`).join('');
+    const n = T.recent.length, ok = T.recent.filter(Boolean).length;
+    const lately = MathQuiz.struggling(t) ? '🧡 Getting extra practice'
+                 : n ? `${ok} of the last ${n} right first time`
+                 : T.asked ? 'Just changed level' : 'Not asked yet';
+    h += `<tr><td>${MATHS.names[t]}</td><td><span class="pvDots">${dots}</span> ` +
+         `${MATHS.tierNames[T.tier]}</td><td>${lately}</td></tr>`;
+  }
+  h += '</table><p class="pvNote">Five right first time in a row moves a topic up; ' +
+       'three misses in five moves it down. Every topic keeps coming up either way — ' +
+       'a tricky one comes up more often, with its hint shown sooner.</p>';
+
+  h += '<h3>Times tables</h3><div class="pvTables">';
+  for (let n = 2; n <= 12; n++) {
+    const st = M.tables[String(n)];
+    const tot = st ? st.right + st.wrong : 0, acc = tot ? st.right / tot : 0;
+    const cls = !tot ? 'unseen' : tot >= 4 && acc >= 0.85 ? 'strong'
+              : tot >= 2 && acc < 0.6 ? 'weak' : 'mid';
+    const tip = tot ? `${st.right} of ${tot} right first time` : 'not asked yet';
+    h += `<div class="pvTab ${cls}" title="${tip}">${n}×<small>${tot ? Math.round(acc * 100) + '%' : '–'}</small></div>`;
+  }
+  h += '</div><p class="pvNote">Green strong · yellow getting there · red needs practice · ' +
+       'grey not asked yet. Times-table and sharing questions both count.</p>';
+
+  const s = skill();
+  h += `<h3>Game difficulty</h3><div class="pvMeter"><i style="left:${((s + 1) / 2 * 100).toFixed(0)}%"></i></div>` +
+       '<div class="pvMeterEnds"><span>gentler</span><span>harder</span></div>' +
+       `<p><b>${skillLabel(s)}</b>${ultraOn() ? ' · Ultra Hard Mode on' : ''} — creatures move at ` +
+       `${Math.round(skillSpeed() * 100)}% speed. It shifts after each level: up after a level ` +
+       'with few zaps, down after one with lots, or after running out of lives. ' +
+       'Jumps and gaps never change.</p>';
+
+  h += '<h3>Recent levels</h3>';
+  if (!save.history.length) {
+    h += '<p class="pvNote">Nothing yet — finish a level and it shows up here.</p>';
+  } else {
+    h += '<table class="pvTable"><tr><th>Level</th><th>Questions</th><th>First try</th><th>Zaps</th></tr>';
+    for (const r of save.history.slice().reverse()) {
+      const L = LEVELS[num(r.level)];
+      const q = num(r.questions), ft = num(r.firstTry);
+      h += `<tr><td>${escHtml(L ? L.name : 'Level ' + (num(r.level) + 1))}${r.ultra ? ' 😼' : ''}` +
+           `${r.won ? '' : ' <span class="pvNote">(ran out of lives)</span>'}</td>` +
+           `<td>${q}</td><td>${q ? Math.round(Math.min(ft, q) / q * 100) + '%' : '—'}</td><td>${num(r.zaps)}</td></tr>`;
+    }
+    h += '</table>';
+  }
+  h += `<p class="pvNote">The aim is about ${QUOTA.target} questions a level: puzzle stones ` +
+       `ask when she isn't being zapped, and after ${QUOTA.ceiling} a level stops asking. ` +
+       'All of this is kept only on this device.</p>';
+  ui.parentBody.innerHTML = h;
+  ui.overlaySettings.classList.add('hidden');
+  ui.overlayParent.classList.remove('hidden');
+  const panel = ui.overlayParent.querySelector('.panel');
+  if (panel) panel.scrollTop = 0;
+}
+if (ui.parentBtn) ui.parentBtn.addEventListener('click', () => { sfx.click(); openParentView(); });
+if (ui.parentCloseBtn) ui.parentCloseBtn.addEventListener('click', () => {
+  sfx.click();
+  ui.overlayParent.classList.add('hidden');
+  ui.overlaySettings.classList.remove('hidden');
+});
 ui.storyBtn.addEventListener('click', () => {
   AudioSys.ensure(); sfx.click();
   ui.overlaySettings.classList.add('hidden');
@@ -7656,6 +8338,12 @@ function checkLevels(ultra = ultraOn()) {
   LEVELS.forEach((entry, li) => {
     if (!entry.build) return;
     const L = ultra ? applyUltra(entry.build()) : entry.build();
+    // the question quota relies on the stones: too few and a clean run is
+    // back to asking almost nothing
+    const st = placeStones(L);
+    if (st.length < QUOTA.minStones) {
+      problems.push(`${entry.name}: only ${st.length} puzzle stones fit (want ${QUOTA.minStones}+)`);
+    }
     for (const e of L.enemies) {
       const S = CREATURES[e.species];
       if (S.move === 'fly') continue;               // flyers belong in the air
@@ -8044,7 +8732,9 @@ window.NQ = { game, player, TUNING, TREEHOUSE, POWERUPS, CREATURES, LEVELS, THEM
               intro, startIntro, skipIntro, advanceIntro,
               persist, resetSave, beginAdventure, enterTreehouse, startOutro, OUTRO_SCENES,
   ULTRA, applyUltra,
-  LIVES, awardCrystals, gameOver, restartAdventure };
+  LIVES, awardCrystals, gameOver, restartAdventure,
+  ADAPT, QUOTA, MATHS, placeStones, skillSpeed, adjustSkill, openParentView,
+  get skill() { return skill(); } };
 
 /* ---- main loop ---- */
 rebuildProgressTicks();

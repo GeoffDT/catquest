@@ -327,6 +327,30 @@
     padding: calc(2.4 * var(--gvmin)) calc(3.6 * var(--gvmin)); margin: calc(1.5 * var(--gvmin)) auto; max-width: 340px;
   }
   .setting input { transform: scale(1.5); margin-right: 4px; }
+  #parentBtn { margin-top: 10px; }
+  /* ---------- Parent view ---------- */
+  #parentBody { text-align: left; font-size: clamp(9px, calc(2.2 * var(--gvmin)), 15px); }
+  .pvTable { width: 100%; border-collapse: collapse; margin: 2px 0 4px; }
+  .pvTable th, .pvTable td { padding: 4px 6px; border-bottom: 1px solid #eadcc0; vertical-align: middle; }
+  .pvTable th { color: #8a6d2c; font-weight: 800; text-align: left; }
+  .pvDots { white-space: nowrap; }
+  .pvDots span { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+                 background: #e3d6bb; margin-right: 2px; }
+  .pvDots span.on { background: #42b25c; }
+  .pvTables { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pvTab { min-width: 44px; text-align: center; padding: 3px 6px; border-radius: 10px;
+           font-weight: 900; border: 2px solid; display: flex; flex-direction: column; }
+  .pvTab small { font-weight: 700; font-size: 0.8em; }
+  .pvTab.strong { background: #e3f6e6; border-color: #42b25c; color: #2c7a3e; }
+  .pvTab.mid    { background: #fff4d6; border-color: #e8b33a; color: #8a6400; }
+  .pvTab.weak   { background: #fde6e1; border-color: #e06a5a; color: #a33; }
+  .pvTab.unseen { background: #f2f2f2; border-color: #d0d0d0; color: #999; }
+  .pvMeter { position: relative; height: 12px; border-radius: 6px; margin: 8px 4px 2px;
+             background: linear-gradient(90deg, #7ec8f0, #ece4cc 50%, #f0a060); }
+  .pvMeter i { position: absolute; top: -4px; width: 6px; height: 20px; border-radius: 3px;
+               background: #2a3550; transform: translateX(-50%); }
+  .pvMeterEnds { display: flex; justify-content: space-between; color: #8a97b5; font-size: 0.85em; margin: 0 4px; }
+  .pvNote { color: #8a97b5; font-size: 0.9em; }
   #resetRow { margin-top: 16px; padding-top: 12px; border-top: 2px dashed #d9b56a; }
   #resetConfirm { color: #a33; font-weight: 800; font-size: 14px; display: block; }
   #resetConfirm button { margin: 6px 4px 0; }
@@ -539,6 +563,15 @@
   </div>
 
   <!-- Settings (opened with the ⚙ button; kept out of the treehouse room) -->
+  <!-- read-only: what the adaptive maths and difficulty currently think -->
+  <div id="overlayParent" class="overlay hidden">
+    <div class="panel">
+      <h2>👪 Parent view</h2>
+      <div id="parentBody"></div>
+      <button id="parentCloseBtn" class="bigbtn">✓ Done</button>
+    </div>
+  </div>
+
   <div id="overlaySettings" class="overlay hidden">
     <div class="panel">
       <h2>⚙ Settings</h2>
@@ -546,6 +579,7 @@
       <label class="setting"><input type="checkbox" id="fxToggle"> 🍃 Gentle effects</label>
       <label class="setting hidden" id="ultraSetting"><input type="checkbox" id="ultraToggle"> 😼 Ultra Hard Mode</label>
       <button id="storyBtn" class="bigbtn blue">📖 Watch the story again</button><br>
+      <button id="parentBtn" class="smallbtn">👪 Parent view — how she's getting on</button><br>
       <button id="settingsCloseBtn" class="bigbtn">✓ Done</button>
       <div id="resetRow">
         <button id="resetBtn" class="smallbtn danger">🗑 Reset all progress</button>

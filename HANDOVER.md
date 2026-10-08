@@ -677,6 +677,40 @@ the scale asks for, because the levels were already built to the edge of what
 is jumpable and the repair gives most of it back. 34 platforms across the game
 do shrink. The real difficulty comes from the rats, which roughly double.
 
+**40. Adaptive difficulty: the three rules that keep it safe.** Sean asked
+for the game to get harder when she is good and easier when she isn't, for
+about ten questions a level, and for maths that adapts *"but it should not
+avoid topics"*. Built as `QUOTA` (puzzle stones), `MATHS` (per-topic levels in
+`MathQuiz`) and `ADAPT` (a skill score), plus a read-only parent view.
+
+1. **Skill never touches geometry.** It goes through `speedMult()` (creatures,
+   and movers at half strength via `speedMult(x, true)`), `bossLaserEvery()`,
+   `addSkillClones()` (normal mode only — Ultra already doubles every patrol)
+   and the assist thresholds in `die()`. Floods, geysers and falls use only
+   `slowFactor()` and must stay that way: the flood chase is tuned against
+   Dex's climbing speed, so a faster flood is impossible, not hard.
+2. **The new save fields did NOT bump `v`.** `skill`, `maths` and `history`
+   ride along in a v5 save. An iPad still holding yesterday's cached game.js
+   treats an unknown version as no save at all — bumping it would have wiped
+   her. Old code carries unknown fields through untouched.
+3. **`sanitizeAdaptive()` runs during `loadSave()`, before `clamp` exists.**
+   `clamp` is a `const` declared ~1,700 lines later; calling it from the save
+   loader is a ReferenceError, which `loadSave`'s catch turns into an **empty
+   save**. Hence the local `within()`, and `adaptSafe()` wrapping the whole
+   thing so a bad adaptive section resets only itself. Tested with an old v5
+   save (no new fields) and a deliberately corrupted one: lives, levels and
+   power-ups survived both.
+
+*Stones wait for solid ground.* The first placer kept stones 100–300px clear
+of every hazard and only fitted 3–5 per level. Making a stone *arm* on touch
+and *ask* only once Dex is grounded (not flying, sliding or swinging) removed
+the reason for the big margins — he can never be frozen over a spike pit and
+dropped back into the jump. Now 10/9/9/6/5 normal, 10/8/7/6/5 Ultra.
+
+*Held movement is not cleared for a stone question.* `keyup` and `pointerup`
+are not state-gated, so a release during the question is still seen. Only a
+queued jump is dropped.
+
 ## 7. Test procedure — run before handing anything to Sean
 
 Syntax: `node --check game.js`
@@ -687,7 +721,10 @@ In the browser console:
   every checkpoint on solid footing and clear of every hazard and of every
   ranged attacker, nothing on the portal run-in, and every rising-slime zone
   escapable. Also a button in the debug panel.
-- `NQ.quizTest(300)` → 300 questions, 0 issues.
+- `NQ.checkLevels(false)` **and** `NQ.checkLevels(true)` → both `[]`. This
+  includes "only N puzzle stones fit" if a level edit crowds them out.
+- `NQ.quizTest(300)` → every topic at every maths level, 0 issues. It also
+  fails if a higher level's numbers come out smaller than the level below.
 - Per level and per checkpoint: `NQ.beginAdventure(i)`, set
   `game.checkpoint`, `placeAtCheckpoint()`, `game.invuln = 0`, no power-up, then
   step ~480 frames standing still. Expect no zap and `player.big` still true.

@@ -383,6 +383,69 @@ Every crystal pickup in the game routes through `awardCrystals(n)`, so the
 "one life per 25" rule has a single home and cannot drift out of step with the
 counter. Lives are spent in `spendLife()` and nowhere else.
 
+## Adaptive difficulty, puzzle stones and the parent view
+
+The game watches how she is doing and adjusts three things. All three are
+remembered in the save, so they carry across levels and visits.
+
+**About ten questions a level.** Questions used to come only from being
+zapped, so a clean run asked nothing. Each level now has **puzzle stones** —
+grey standing stones with a glowing **?** — laid out evenly along the route.
+Walking past one asks a question *only if the level is behind pace* (stone 4
+of 10 asks if fewer than 4 questions have come up so far, from any source);
+otherwise it gives a free crystal. A correct answer is worth 2 crystals. A
+stone never asks mid-jump, mid-swing, mid-slide or mid-catapult — it waits
+until Dex is standing on something. Once a level has asked **15**, a zap just
+sends her back to the checkpoint without another question. So ten is an aim,
+not a rule: a clean run gets about ten from the stones, a bumpy one gets about
+ten mostly from zaps, and nobody gets fifty.
+
+Stones are placed by code (`placeStones()`), not by hand, and keep clear of
+spikes, slime, lava, floods, the chute, geodes, vines, rat patrols, monkeys and
+checkpoints. Busy levels fit fewer — the Sewer is half chute and gets five,
+Glow City six — so there a stone well behind pace asks **two** in a row.
+`checkLevels()` complains if any level fits fewer than five.
+
+**Maths that follows her.** Every question belongs to one of five topics —
+adding, taking away, times tables, sharing (division), number patterns — and
+each topic has its own level from 0 to 4. Level 2 is the game as it was before
+this existed, which is where everyone starts.
+
+| | Adding / taking away | Times tables & sharing | Patterns |
+|---|---|---|---|
+| 0 Starting out | small numbers, to about 25 | 2, 5, 10 up to ×6 | count up in 1s, 2s, 5s, 10s |
+| 1 Building up | 2-digit ± 1-digit | 2, 3, 4, 5, 10 | up and down in 2s, 3s, 5s, 10s |
+| 2 On track | the original questions | 2, 3, 4, 5, 8, 10 | the original mix |
+| 3 Stretching | 2-digit ± 2-digit, past 100 | 3, 4, 6, 7, 8, 9 | bigger steps, 25s, doubling |
+| 4 Flying | 3-digit numbers | 6, 7, 8, 9, 11, 12 | 50s, halving, bigger starts |
+
+Five right **first time** in a row moves a topic up; three misses in its last
+five moves it down. Either move clears the record, so it can't see-saw.
+**No topic is ever dropped.** A topic she is struggling with comes up *more*
+often (×1.6) at its easier level, and shows its hint after one wrong answer
+instead of two — or before she answers at all, if it is already at level 0. A
+times table she keeps missing is mixed back in whatever level she is on.
+
+**A game that follows her.** A skill score from −1 to +1 moves after each
+level: up 0.25 for a zap-free level, up 0.12 for one or two zaps, nothing for
+three or four, down 0.15 for five to seven, down 0.3 for eight or more or for
+running out of lives. It sets how fast the creatures move (70% to 125%; up to
+140% in Ultra Hard Mode, which raises the ceiling), moving platforms at half
+that, King Ratthew's beam rate (±15%), whether a few rat patrols get a second
+rat, and whether the in-level helpers arrive one zap sooner or later. It never
+changes jumps, gaps, platforms or catapult arcs, and never touches rising
+slime, geysers or lava falls — those are timed against Dex's own speed.
+
+**Parent view.** ⚙ Settings → *👪 Parent view* shows each topic's level and
+recent answers, a colour per times table (green strong, yellow getting there,
+red needs practice, grey not asked yet), where the game difficulty sits, and
+the questions, first-try score and zaps for the last few levels. It is
+read-only and everything stays on the device.
+
+Tuning lives in three blocks near the top of `game.js`: `QUOTA` (questions per
+level), `MATHS` (topic weights, how fast levels move) and `ADAPT` (the skill
+score and what it changes).
+
 ## Power-ups & how they're earned (deterministic, no randomness)
 
 Dex starts with **nothing**. Clearing a level for the first time unlocks exactly
